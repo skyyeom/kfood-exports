@@ -1,0 +1,23 @@
+﻿ID,Name,Outline Level,Start,Finish,Duration,Milestone,Predecessors,% Complete,Notes
+1,Horizon 1 — Prove (Lotte AX Challenge),1,2026-10-26,2027-04-09,120 days,No,,0,H1 · Summary
+2,R0 Discovery & PM artefacts,2,2026-10-26,2026-10-30,5 days,No,,100,H1 · Product · Grounded problem & requirements
+3,"M1 Data foundation (schema, pipeline, provenance, tariffs)",2,2026-11-02,2026-11-13,10 days,No,2,0,H1 · Data · Trusted evidence base
+4,"M2 Scoring, P(TOP3), presets, forecast engine",2,2026-11-16,2026-11-27,10 days,No,3,0,H1 · Intelligence · Defensible TOP3
+5,"M3 API + dashboard MVP (KO/EN, warm-up)",2,2026-11-30,2026-12-11,10 days,No,4,0,H1 · Experience · Decision speed
+6,"M4 AI agent, verifier, regulation RAG, TOP3 report",2,2026-12-14,2027-01-08,20 days,No,5,0,H1 · AI agent · Trusted AI answers
+7,R1.0 예선 demo-ready,2,2027-01-08,2027-01-08,0 days,Yes,6,0,H1 · Milestone
+8,"M5 Monitoring: auth, daily refresh, alerts, simulation",2,2027-01-11,2027-01-29,15 days,No,7,0,H1 · Monitoring · Market visibility
+9,"M6 Evaluation reports, time-savings, proposal, video",2,2027-02-01,2027-02-12,10 days,No,8,0,H1 · Product · Credible impact claims
+10,R1.1 예선 submission (anticipated),2,2027-02-12,2027-02-12,0 days,Yes,9,0,H1 · Milestone
+11,"R2.0 본선 prototype: Lotte field data, product mapping",2,2027-03-01,2027-04-02,25 days,No,10,0,H1 · Data · Internal data loop
+12,본선 demo (anticipated),2,2027-04-09,2027-04-09,0 days,Yes,11,0,H1 · Milestone
+13,Horizon 2 — Embed (pilot at Lotte Wellfood),1,2027-05-03,2027-11-30,152 days,No,,0,H2 · Summary
+14,"R3.0 Enterprise pilot: SSO, security review, internal sales connector",2,2027-05-03,2027-07-30,65 days,No,12,0,H2 · Platform · Overseas share 35% by 2028
+15,"R3.1 Product × market × entry-mode economics (Pepero, ZERO, ice cream)",2,2027-06-01,2027-08-27,64 days,No,12,0,H2 · Intelligence · Pepero global mega brand
+16,R4.0 Production rollout; used in annual market-priority review,2,2027-09-01,2027-11-30,65 days,No,14;15,0,H2 · Platform · Disciplined portfolio decisions
+17,R4.0 in production,2,2027-11-30,2027-11-30,0 days,Yes,16,0,H2 · Milestone
+18,Horizon 3 — Scale (multi-tenant SaaS),1,2028-01-03,2028-12-31,260 days,No,,0,H3 · Summary
+19,R5.0 Multi-tenant SaaS beta; new categories; premium data connectors,2,2028-01-03,2028-06-30,130 days,No,17,0,H3 · Platform · Scale beyond one company
+20,R5.1 Export-support organisation pilot,2,2028-04-03,2028-09-29,130 days,No,17,0,H3 · GTM · SME export enablement
+21,R6.0 General availability,2,2028-12-15,2028-12-15,0 days,Yes,19;20,0,H3 · Milestone
+22,Client objective: Lotte overseas revenue share 35% (2028),2,2028-12-31,2028-12-31,0 days,Yes,,0,H3 · Client objective
