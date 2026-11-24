@@ -170,6 +170,7 @@ def reason_pack(iso: str, ranked: pd.DataFrame, features: pd.DataFrame) -> dict:
         "rank": position,
         "summary": summary,
         "headline": headline,
+        "pillars": [entry(p) for p in pillars],
         "strengths": strengths,
         "weakest": weakest,
         "confidence": _confidence(row["top3_probability"], row["top3_prob_random_weights"]),

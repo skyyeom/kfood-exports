@@ -76,3 +76,10 @@ def test_headline_is_a_short_why(packs):
         == "Leads on market size (#1) and Korean export momentum (#1); weakest on market growth (#13)."
     )
     assert len(packs["PHL"]["headline"]) < 120
+
+
+def test_pack_lists_every_pillar_with_its_facts(packs):
+    pillars = packs["USA"]["pillars"]
+
+    assert [p["pillar"] for p in pillars] == ["Market growth", "Market size", "K-momentum (trade)", "Entry ease"]
+    assert pillars[3]["facts"][0]["key"] == "lpi_score"

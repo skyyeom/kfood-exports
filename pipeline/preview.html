@@ -147,6 +147,30 @@
   #tip dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 6px 0 0; }
   #tip dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   [hidden] { display: none !important; }
+  .more { font-weight: 600; font-size: 14px; text-decoration: none; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--grid); }
+  .more:hover { text-decoration: underline; }
+  tbody tr.link { cursor: pointer; }
+  td a.row-link { color: var(--ink); text-decoration: none; font-weight: 600; }
+  td a.row-link:hover { text-decoration: underline; }
+  .crumb { font-size: 14px; text-decoration: none; display: inline-block; margin-bottom: 8px; }
+  .c-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; color: var(--ink-2); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+  .pillar { padding: 10px 0; border-top: 1px solid var(--grid); }
+  .pillar:first-of-type { border-top: 0; padding-top: 0; }
+  .pillar-head { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr auto; gap: 10px; align-items: center; }
+  .stat { font-size: 30px; font-weight: 700; line-height: 1.1; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); margin: 4px 0 8px; }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; background: var(--c); }
+  .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink-2); }
+  .chart .gridline { stroke: var(--grid); stroke-width: 1; }
+  .chart .axis { stroke: var(--axis); stroke-width: 1; }
+  .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .cross { stroke: var(--axis); stroke-width: 1; }
+  .linkbtn { background: none; border: 0; padding: 0; color: var(--series-1); font-weight: 600; font-size: 13px; }
+  .viz { --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; }
+  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .viz { --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; } }
+  :root[data-theme="dark"] .viz { --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; }
 </style>
 </head>
 <body>
@@ -187,8 +211,14 @@
       <section class="card" aria-labelledby="all-h">
         <h2 id="all-h">All scored countries</h2>
         <div class="scroll" id="ranking"></div>
-        <p class="note">Score 0–100 combines four pillars: market growth 30%, market size 25%, Korean export momentum 30%, ease of entry 15%. Growth uses volume, not value, and re-export hubs are excluded. "In TOP3" is the share of 5,000 slightly varied weightings (±20%) in which the country stays in the top three.</p>
+        <p class="note">Score 0–100 combines four pillars: market growth 30%, market size 25%, Korean export momentum 30%, ease of entry 15%. Growth uses volume, not value, and re-export hubs are excluded.</p>
       </section>
+    </div>
+
+    <!-- COUNTRY -->
+    <div data-view="country" hidden>
+      <a class="crumb" href="#/overview">← Overview</a>
+      <div id="country"></div>
     </div>
 
     <!-- MANAGEMENT -->
@@ -266,11 +296,13 @@ const pillarItem = e => `<li><b>${esc(cap(e.name))}</b> <span class="muted">#${e
 
 /* ---------- routing ---------- */
 function route() {
-  const page = (location.hash.match(/^#\/(\w+)/) || [])[1] || "overview";
+  const [, page = "overview", iso, cat] = location.hash.match(/^#\/(\w+)(?:\/(\w+))?(?:\/(\w+))?/) || [];
   document.querySelectorAll("[data-view]").forEach(v => { v.hidden = v.dataset.view !== page; });
+  const nav = page === "country" ? "overview" : page;
   document.querySelectorAll("nav a").forEach(a => {
-    if (a.dataset.page === page) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    if (a.dataset.page === nav) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
+  if (page === "country" && iso) { loadCountry(iso.toUpperCase(), CATEGORIES[cat] ? cat : "all"); return; }
   document.title = `${page === "management" ? "Management" : "Overview"} · WellGTM`;
 }
 
@@ -291,12 +323,7 @@ function renderTop3(st) {
         <div class="t-name" id="t-${esc(r.iso3)}">${esc(w.name)}</div></div>${badge(CONF[w.confidence.level])}</div>
       <p class="t-why">${esc(w.headline)}</p>
       <p class="t-conf">In the TOP3 in ${Math.round(w.confidence.p_top3 * 100)}% of weightings${w.caveats.length ? ` · ${w.caveats.length} caveat${w.caveats.length > 1 ? "s" : ""}` : ""}</p>
-      <details><summary>Why, in detail</summary>
-        <h3>Strengths</h3><ul>${w.strengths.map(pillarItem).join("")}</ul>
-        <h3>Weakest compared with other markets</h3><ul>${pillarItem(w.weakest)}</ul>
-        <h3>How sure</h3><p class="fact">${esc(cap(w.confidence.text))}</p>
-        ${w.caveats.length ? `<h3>Caveats</h3>${w.caveats.map(c => `<div class="caveat">${esc(c)}</div>`).join("")}` : ""}
-      </details>
+      <a class="more" href="#/country/${esc(r.iso3)}/${category}">Why, in detail →</a>
     </article>`;
   }).join("");
 }
@@ -306,34 +333,132 @@ function renderRanking(st) {
   const el = document.getElementById("ranking");
   if (!rows.length) { el.innerHTML = `<div class="empty">No countries scored yet.</div>`; return; }
   const max = Math.max(...rows.map(r => r.score));
-  el.innerHTML = `<table><caption>${esc(CATEGORIES[category])}: ${rows.length} countries. Hover or focus a row for its pillar scores.</caption>
-    <thead><tr><th class="num" scope="col">Rank</th><th scope="col">Country</th><th class="bar-cell" scope="col">Score</th><th class="bar-cell" scope="col">In TOP3</th><th scope="col">Why</th><th scope="col">Notes</th></tr></thead><tbody>${
-    rows.map((r, i) => {
-      const w = r.reasons || {};
-      const notes = [r.imputed_pillars?.length ? "some data estimated" : "", w.caveats?.length ? `${w.caveats.length} caveat${w.caveats.length > 1 ? "s" : ""}` : ""].filter(Boolean);
-      return `<tr class="${i < 3 ? "is-top" : ""}" data-i="${i}" tabindex="0">
-        <td class="num">${r.rank}</td><td>${esc(w.name || r.iso3)}</td>
-        <td><div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(r.score / max * 100).toFixed(1)}%"></span></div><b>${r.score.toFixed(1)}</b></div></td>
-        <td><div class="bar-wrap"><div class="bar soft" aria-hidden="true"><span style="width:${(r.top3_probability * 100).toFixed(1)}%"></span></div><b>${Math.round(r.top3_probability * 100)}%</b></div></td>
-        <td class="fact">${esc(w.headline || "")}</td>
-        <td>${notes.map(n => `<span class="pill">${esc(n)}</span>`).join(" ")}</td></tr>`;
-    }).join("")}</tbody></table>`;
-  el.querySelectorAll("tr[data-i]").forEach(tr => {
-    const r = rows[+tr.dataset.i];
-    const show = (x, y) => {
-      const tip = document.getElementById("tip");
-      tip.innerHTML = `<b>${esc(r.reasons?.name || r.iso3)}</b> · pillar scores (0–100)<dl>${
-        Object.entries(PILLARS).map(([k, label]) => `<dt>${label}</dt><dd>${Math.round(r[k] * 100)}</dd>`).join("")
-      }<dt>In TOP3, any weighting</dt><dd>${Math.round(r.top3_prob_random_weights * 100)}%</dd><dt>Import data year</dt><dd>${r.latest_year ?? "—"}</dd></dl>`;
-      tip.hidden = false;
-      tip.style.left = Math.min(x + 14, innerWidth - 310) + "px";
-      tip.style.top = Math.min(y + 14, innerHeight - 200) + "px";
-    };
-    tr.addEventListener("mousemove", e => show(e.clientX, e.clientY));
-    tr.addEventListener("focus", () => { const b = tr.getBoundingClientRect(); show(b.left + 40, b.bottom); });
-    const hide = () => { document.getElementById("tip").hidden = true; };
-    tr.addEventListener("mouseleave", hide); tr.addEventListener("blur", hide);
+  el.innerHTML = `<table><caption>${esc(CATEGORIES[category])}: ${rows.length} countries. Select a country for the full detail.</caption>
+    <thead><tr><th class="num" scope="col">Rank</th><th scope="col">Country</th><th class="bar-cell" scope="col">Score (0–100)</th></tr></thead><tbody>${
+    rows.map((r, i) => `<tr class="link ${i < 3 ? "is-top" : ""}" data-href="#/country/${esc(r.iso3)}/${category}">
+        <td class="num">${r.rank}</td>
+        <td><a class="row-link" href="#/country/${esc(r.iso3)}/${category}">${esc(r.reasons?.name || r.iso3)}</a></td>
+        <td><div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(r.score / max * 100).toFixed(1)}%"></span></div><b>${r.score.toFixed(1)}</b></div></td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+/* ---------- country ---------- */
+const CAT_COLOR = { "1704": "var(--c1)", "1806": "var(--c2)", "1905": "var(--c3)", "2105": "var(--c4)" };
+let countryIso = null, countryCat = "all", countryData = null, showTable = false;
+const ym = p => `${p.slice(0, 4)}-${p.slice(4)}`;
+const money = v => v >= 1e9 ? `US$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `US$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `US$${(v / 1e3).toFixed(0)}K` : `US$${Math.round(v)}`;
+
+async function loadCountry(iso, cat) {
+  countryIso = iso; countryCat = cat;
+  const el = document.getElementById("country");
+  const res = await fetch(`/api/country/${encodeURIComponent(iso)}`);
+  if (!res.ok) { el.innerHTML = `<h1>Unknown country</h1><p class="lede">There is no candidate market with code ${esc(iso)}.</p>`; document.title = "Unknown country · WellGTM"; return; }
+  countryData = await res.json();
+  renderCountry();
+}
+
+function renderCountry() {
+  const c = countryData, el = document.getElementById("country");
+  document.title = `${c.name} · WellGTM`;
+  const r = c.ranking[countryCat] || c.ranking.all;
+  if (!r) { el.innerHTML = `<h1>${esc(c.name)}</h1><p class="lede">${esc(c.name)} is not in the current ranking (it may be a re-export hub, a sanctioned market or lack data).</p>`; return; }
+  const w = r.reasons;
+  el.innerHTML = `
+    <h1>${esc(c.name)}</h1>
+    <div class="c-meta"><span>#${r.rank} of ${r.of} · score ${r.score.toFixed(1)} · ${esc(CATEGORIES[countryCat])}</span>${badge(CONF[w.confidence.level])}</div>
+    <div class="tabs" role="group" aria-label="Product category" style="margin-top:16px">${Object.entries(CATEGORIES).map(([k, v]) =>
+      `<button data-ccat="${k}" aria-pressed="${k === countryCat}" ${c.ranking[k] ? "" : "disabled"}>${esc(v)}</button>`).join("")}</div>
+
+    <section class="card" aria-labelledby="c-why"><h2 id="c-why">Why</h2>
+      <p style="margin:0 0 8px">${esc(w.summary)}</p>
+      <h3>How sure</h3><p class="fact" style="margin:0">${esc(cap(w.confidence.text))}</p>
+      ${w.caveats.length ? `<h3>Notes and caveats</h3>${w.caveats.map(x => `<div class="caveat">${esc(x)}</div>`).join("")}` : `<h3>Notes and caveats</h3><p class="fact" style="margin:0">None: every indicator was available.</p>`}
+    </section>
+
+    <section class="card" aria-labelledby="c-pillars"><h2 id="c-pillars">Pillar scores</h2>
+      ${w.pillars.map(p => `<div class="pillar">
+        <div class="pillar-head"><b>${esc(cap(p.name))}</b>
+          <div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(p.value * 100).toFixed(1)}%"></span></div><b>${Math.round(p.value * 100)}</b></div>
+          <span class="muted">#${p.rank} of ${p.of}</span></div>
+        ${p.facts.length ? `<div class="fact" style="margin-top:4px">${p.facts.map(fmtFact).join("<br>")}</div>` : `<div class="fact">No indicator data; the median of all countries was used.</div>`}
+      </div>`).join("")}
+    </section>
+
+    <section class="card" aria-labelledby="c-exports">
+      <div class="page-head" style="margin:0"><h2 id="c-exports" style="margin:0">Korean exports here, by month</h2>
+        <button class="linkbtn" data-toggle-table>${showTable ? "Show chart" : "Show as table"}</button></div>
+      <p class="fact" style="margin:4px 0 0">관세청 monthly export statistics (FOB, US$), last ${new Set(c.monthly.map(m => m.period)).size} months.</p>
+      <div id="c-chart" class="viz"></div>
+    </section>
+
+    <div class="grid2">
+      <section class="card" aria-labelledby="c-share"><h2 id="c-share">Food's share of Korea's exports here</h2>${
+        c.food_share ? `<div class="stat">${(c.food_share.share * 100).toFixed(2)}%</div>
+          <p class="fact">${money(c.food_share.food_usd)} of ${money(c.food_share.total_usd)} in ${ym(c.food_share.period)} (four product categories vs all goods; 관세청).</p>`
+        : `<p class="empty">No 관세청 data loaded for this market yet.</p>`}</section>
+      <section class="card" aria-labelledby="c-rank"><h2 id="c-rank">Rank by product category</h2>
+        <table><thead><tr><th scope="col">Category</th><th class="num" scope="col">Rank</th><th class="num" scope="col">Score</th><th scope="col">Confidence</th></tr></thead><tbody>${
+          Object.entries(CATEGORIES).map(([k, v]) => { const x = c.ranking[k];
+            return `<tr><td>${esc(v)}</td><td class="num">${x ? `#${x.rank} of ${x.of}` : "—"}</td><td class="num">${x ? x.score.toFixed(1) : "—"}</td><td>${x ? badge(CONF[x.reasons.confidence.level]) : ""}</td></tr>`; }).join("")
+        }</tbody></table></section>
+    </div>
+
+    <section class="card" aria-labelledby="c-tariffs"><h2 id="c-tariffs">Tariffs on Korean products</h2>
+      <div class="scroll"><table><caption>Applied rate = the lower of MFN and the FTA rate, plus any additional duties in force.</caption>
+        <thead><tr><th scope="col">Category</th><th class="num" scope="col">MFN average</th><th scope="col">FTA rate</th><th scope="col">Additional duties</th><th class="num" scope="col">Applied</th></tr></thead><tbody>${
+        c.tariffs.map(t => `<tr><td>${esc(CATEGORIES[t.hs])} <span class="muted">${t.hs}</span></td>
+          <td class="num">${t.mfn_pct == null ? "—" : `${t.mfn_pct}%`} <span class="src">${t.mfn_lines ? `${t.mfn_lines} lines` : ""}</span></td>
+          <td>${t.preferential_pct != null ? `${t.preferential_pct}% (${esc(t.agreement)})` : t.fta_rate_missing ? `<span class="status s-warning"><i aria-hidden="true">!</i>${esc(t.fta_with_korea)}: rate not entered</span>` : "No FTA"}</td>
+          <td>${t.additional_pct ? `${t.additional_pct}% (${esc(t.additional)})` : "None"}</td>
+          <td class="num"><b>${t.applied_pct == null ? "—" : `${t.applied_pct}%`}</b></td></tr>`).join("")
+      }</tbody></table></div>
+      ${c.tariffs.some(t => t.fta_rate_missing) ? `<div class="caveat">Korea has an FTA with ${esc(c.name)} (${esc(c.tariffs[0].fta_with_korea)}), but its preferential rates are not in the tariff file yet, so “Applied” shows MFN and probably overstates the real tariff.</div>` : ""}
+      <p class="note">MFN: WITS/TRAINS simple averages per HS6 line, latest year. FTA rates and additional duties: the reviewed override file (pipeline/tariff_overrides.yaml).</p>
+    </section>`;
+  renderExportsChart();
+}
+
+function renderExportsChart() {
+  const el = document.getElementById("c-chart"), data = countryData.monthly;
+  if (!data.length) { el.innerHTML = `<p class="empty">No 관세청 monthly data for this market yet.</p>`; return; }
+  const periods = [...new Set(data.map(d => d.period))].sort();
+  const cats = Object.keys(CAT_COLOR).filter(k => data.some(d => d.category === k));
+  const val = (k, p) => (data.find(d => d.category === k && d.period === p) || {}).value_usd || 0;
+  if (showTable) {
+    el.innerHTML = `<div class="scroll"><table><thead><tr><th scope="col">Month</th>${cats.map(k => `<th class="num" scope="col">${esc(CATEGORIES[k])}</th>`).join("")}</tr></thead><tbody>${
+      periods.slice().reverse().map(p => `<tr><td>${ym(p)}</td>${cats.map(k => `<td class="num">${money(val(k, p))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    return;
+  }
+  const W = 760, H = 280, L = 64, R = 130, T = 12, B = 28, w = W - L - R, h = H - T - B;
+  const max = Math.max(...cats.flatMap(k => periods.map(p => val(k, p)))) || 1;
+  const step = 10 ** Math.floor(Math.log10(max)), top = Math.ceil(max / step) * step;
+  const x = i => L + (periods.length < 2 ? w / 2 : i / (periods.length - 1) * w), y = v => T + h - v / top * h;
+  const ticks = [0, .25, .5, .75, 1].map(f => f * top);
+  const yearTicks = periods.map((p, i) => [p, i]).filter(([p]) => p.endsWith("01"));
+  const lines = cats.map(k => `<path class="line" style="stroke:${CAT_COLOR[k]}" d="${periods.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(val(k, p)).toFixed(1)}`).join("")}"/>`);
+  // direct labels at the line ends, nudged apart so they never overlap
+  const ends = cats.map(k => ({ k, y: y(val(k, periods.at(-1))) })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
+  el.innerHTML = `<div class="legend" aria-hidden="true">${cats.map(k => `<span style="--c:${CAT_COLOR[k]}">${esc(CATEGORIES[k])}</span>`).join("")}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Line chart of Korean monthly exports to ${esc(countryData.name)} by product category, ${ym(periods[0])} to ${ym(periods.at(-1))}. Use “Show as table” for the values.">
+      ${ticks.map(t => `<line class="gridline" x1="${L}" x2="${L + w}" y1="${y(t)}" y2="${y(t)}"/><text x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${money(t)}</text>`).join("")}
+      <line class="axis" x1="${L}" x2="${L + w}" y1="${T + h}" y2="${T + h}"/>
+      ${yearTicks.map(([p, i]) => `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${p.slice(0, 4)}</text>`).join("")}
+      ${lines.join("")}
+      ${ends.map(e => `<text x="${L + w + 8}" y="${e.y + 4}" style="fill:var(--ink-2)">${esc(CATEGORIES[e.k])}</text>`).join("")}
+      <line class="cross" id="cross" y1="${T}" y2="${T + h}" visibility="hidden"/>
+      <rect id="hit" x="${L}" y="${T}" width="${w}" height="${h}" fill="transparent"/>
+    </svg>`;
+  const svg = el.querySelector("svg"), cross = el.querySelector("#cross"), tip = document.getElementById("tip");
+  el.querySelector("#hit").addEventListener("mousemove", ev => {
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const i = Math.max(0, Math.min(periods.length - 1, Math.round((loc.x - L) / w * (periods.length - 1))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    tip.innerHTML = `<b>${ym(periods[i])}</b><dl>${cats.map(k => `<dt>${esc(CATEGORIES[k])}</dt><dd>${money(val(k, periods[i]))}</dd>`).join("")}</dl>`;
+    tip.hidden = false; tip.style.left = Math.min(ev.clientX + 14, innerWidth - 310) + "px"; tip.style.top = (ev.clientY + 14) + "px";
   });
+  el.querySelector("#hit").addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
 }
 
 /* ---------- management ---------- */
@@ -417,6 +542,11 @@ async function refresh() {
 document.addEventListener("click", async e => {
   const run = e.target.closest("[data-run]");
   if (run) { run.disabled = true; run.textContent = "Starting…"; await fetch(`/api/run?source=${encodeURIComponent(run.dataset.run)}`, { method: "POST" }); refresh(); }
+  const row = e.target.closest("tr[data-href]");
+  if (row && !e.target.closest("a")) location.hash = row.dataset.href;
+  const ccat = e.target.closest("[data-ccat]");
+  if (ccat) { location.hash = `#/country/${countryIso}/${ccat.dataset.ccat}`; return; }
+  if (e.target.closest("[data-toggle-table]")) { showTable = !showTable; renderCountry(); return; }
   const cat = e.target.closest("[data-cat]");
   if (cat) { category = cat.dataset.cat; renderTabs(); if (last) { renderTop3(last); renderRanking(last); } }
 });

@@ -66,6 +66,33 @@ ISO2 = {  # 관세청 (data.go.kr) uses ISO 3166 alpha-2 country codes
     "RUS": "RU",
 }
 
+# Korea's trade agreements in force with each candidate (02_market_analysis.md §6). Preferential *rates* live in
+# pipeline/tariff_overrides.yaml; a market listed here without one there is flagged as "FTA rate not entered".
+_EU = "Korea–EU FTA"
+_ASEAN = "ASEAN–Korea FTA (AKFTA)"
+FTA_WITH_KOREA = {
+    "USA": "KORUS FTA",
+    "CAN": "Korea–Canada FTA",
+    "GBR": "Korea–UK FTA",
+    "DEU": _EU,
+    "FRA": _EU,
+    "NLD": _EU,
+    "POL": _EU,
+    "CHN": "Korea–China FTA",
+    "JPN": "RCEP",
+    "VNM": "Korea–Vietnam FTA (KVFTA)",
+    "IDN": "Korea–Indonesia CEPA / AKFTA",
+    "PHL": _ASEAN,
+    "MYS": _ASEAN,
+    "THA": _ASEAN,
+    "SGP": "Korea–Singapore FTA",
+    "KHM": "Korea–Cambodia FTA / AKFTA",
+    "MMR": _ASEAN,
+    "IND": "Korea–India CEPA",
+    "AUS": "Korea–Australia FTA",
+    "NZL": "Korea–New Zealand FTA",
+}
+
 # WITS uses ISO 3166 numeric codes; these differ from Comtrade's M49 codes above
 WITS_CODE_OVERRIDES = {"USA": 840, "FRA": 250, "IND": 356, "TWN": 158}
 

@@ -19,8 +19,10 @@ from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 
+from pipeline.config import CANDIDATES, FTA_WITH_KOREA, HS
 from pipeline.db import Store
 from pipeline.http import Http
+from pipeline.indicators import CATEGORIES
 from pipeline.raw import LocalRawStore
 from pipeline.run import run_sources
 from pipeline.sources import SOURCES
@@ -96,6 +98,77 @@ def state(store: Store) -> dict:
     }
 
 
+def _applied_tariffs(tariffs: pd.DataFrame, iso: str, today: str) -> list[dict]:
+    """Per HS4: applied = min(MFN, preferential rate in force) + additional duties in force (data dictionary)."""
+    t = tariffs[tariffs.importer_iso3 == iso]
+    in_force = t[(t.effective_from <= today) & (t.effective_to.isna() | (t.effective_to > today))]
+    out = []
+    for heading in HS:
+        lines = in_force[in_force.hs.str.startswith(heading)]
+        mfn = lines[lines.rate_type == "mfn"].rate_pct
+        pref = lines[lines.rate_type == "pref"]
+        extra = lines[lines.rate_type == "additional"]
+        mfn_pct = round(float(mfn.mean()), 2) if len(mfn) else None
+        pref_pct = float(pref.rate_pct.min()) if len(pref) else None
+        base = min(x for x in (mfn_pct, pref_pct) if x is not None) if (mfn_pct, pref_pct) != (None, None) else None
+        out.append(
+            {
+                "hs": heading,
+                "mfn_pct": mfn_pct,
+                "mfn_lines": len(mfn),
+                "preferential_pct": pref_pct,
+                "agreement": ", ".join(sorted(set(pref.agreement))) or None,
+                "additional_pct": float(extra.rate_pct.sum()) if len(extra) else 0.0,
+                "additional": ", ".join(sorted(set(extra.agreement))) or None,
+                "applied_pct": None if base is None else base + float(extra.rate_pct.sum()),
+                "sources": sorted(set(lines.source_url.dropna())),
+                "fta_with_korea": FTA_WITH_KOREA.get(iso),
+                "fta_rate_missing": iso in FTA_WITH_KOREA and pref_pct is None,
+            }
+        )
+    return out
+
+
+def country_state(store: Store, iso: str) -> dict:
+    """Everything the country page shows for one candidate market."""
+    if iso not in CANDIDATES:
+        raise KeyError(iso)
+    ranking = {}
+    for category in CATEGORIES:
+        rows = store.latest_ranking(category=category)
+        row = next((r for r in rows if r["iso3"] == iso), None)
+        ranking[category] = row | {"of": len(rows)} if row else None
+
+    trade = store.read("trade_flows")
+    mine = trade[(trade.partner_iso3 == iso) & (trade.flow == "X") & (trade.freq == "M")]
+    food = mine[mine.source == "kcs_monthly"].assign(category=lambda d: d.hs.str[:4])
+    monthly = food.groupby(["category", "period"], as_index=False).value_usd.sum().sort_values("period")
+    recent = sorted(monthly.period.unique())[-36:]
+    monthly = monthly[monthly.period.isin(recent)]
+
+    totals = mine[mine.source == "kcs_nations"].set_index("period").value_usd
+    food_by_month = food.groupby("period").value_usd.sum()
+    common = sorted(set(totals.index) & set(food_by_month.index))
+    share = None
+    if common:
+        last = common[-1]
+        share = {
+            "period": last,
+            "food_usd": float(food_by_month[last]),
+            "total_usd": float(totals[last]),
+            "share": float(food_by_month[last] / totals[last]),
+        }
+
+    return {
+        "iso3": iso,
+        "name": CANDIDATES[iso][1],
+        "ranking": ranking,
+        "monthly": _records(monthly),
+        "food_share": share,
+        "tariffs": _applied_tariffs(store.read("tariffs"), iso, datetime.now(UTC).date().isoformat()),
+    }
+
+
 class _Handler(BaseHTTPRequestHandler):
     store: Store
     running: set[str]
@@ -112,6 +185,12 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/":
             self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+        elif path.startswith("/api/country/"):
+            try:
+                body = country_state(self.store, path.rsplit("/", 1)[-1].upper())
+            except KeyError:
+                return self._send(404, b'{"error": "unknown country"}')
+            self._send(200, json.dumps(body, default=str).encode())
         elif path == "/api/state":
             self._send(200, json.dumps(state(self.store) | {"running": sorted(self.running)}, default=str).encode())
         else:
