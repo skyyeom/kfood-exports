@@ -140,6 +140,11 @@ def reason_pack(iso: str, ranked: pd.DataFrame, features: pd.DataFrame) -> dict:
         f"Its weakest pillar, compared with other markets, is {part(weakest)}."
     )
 
+    headline = (
+        f"Leads on {strengths[0]['name']} (#{strengths[0]['rank']}) and {strengths[1]['name']} "
+        f"(#{strengths[1]['rank']}); weakest on {weakest['name']} (#{weakest['rank']})."
+    )
+
     caveats = []
     ratio = _num(f.get("mirror_ratio"))
     if ratio is not None and abs(ratio - 1) > 0.3:
@@ -164,6 +169,7 @@ def reason_pack(iso: str, ranked: pd.DataFrame, features: pd.DataFrame) -> dict:
         "name": name,
         "rank": position,
         "summary": summary,
+        "headline": headline,
         "strengths": strengths,
         "weakest": weakest,
         "confidence": _confidence(row["top3_probability"], row["top3_prob_random_weights"]),

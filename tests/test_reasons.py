@@ -68,3 +68,11 @@ def test_country_names_read_naturally_in_sentences(packs):
     assert packs["PHL"]["summary"].startswith("The Philippines ranks #3")
     assert "Korean exports to this market" in packs["USA"]["summary"]
     assert "weakest pillar, compared with other markets, is market growth" in packs["USA"]["summary"]
+
+
+def test_headline_is_a_short_why(packs):
+    assert (
+        packs["USA"]["headline"]
+        == "Leads on market size (#1) and Korean export momentum (#1); weakest on market growth (#13)."
+    )
+    assert len(packs["PHL"]["headline"]) < 120
