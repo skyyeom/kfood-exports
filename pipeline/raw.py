@@ -7,6 +7,14 @@ import json
 import zipfile
 from pathlib import Path
 
+SECRET_PARAMS = ("key", "token", "secret", "password")  # e.g. data.go.kr serviceKey, apikey, access_token
+
+
+def _redact(params: dict | None) -> dict | None:
+    if not params:
+        return params
+    return {k: "<redacted>" if any(s in k.lower() for s in SECRET_PARAMS) else v for k, v in params.items()}
+
 
 class RecordingHttp:
     """Wraps an HTTP client and keeps every response body, so a run's raw inputs can be archived."""
@@ -25,7 +33,7 @@ class RecordingHttp:
             for i, (url, params, body) in enumerate(self.responses):
                 name = f"{i:04d}.bin"
                 z.writestr(name, body)
-                manifest.append({"file": name, "url": url, "params": params})  # headers omitted: may hold keys
+                manifest.append({"file": name, "url": url, "params": _redact(params)})  # headers omitted: may hold keys
             z.writestr("manifest.json", json.dumps(manifest, indent=1, default=str))
         return buf.getvalue()
 

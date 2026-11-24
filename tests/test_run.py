@@ -364,3 +364,25 @@ def test_stored_ranking_explains_each_country(store):
     usa = store.latest_ranking()[0]["reasons"]
     assert usa["summary"].startswith("The United States ranks #1")
     assert usa["confidence"]["level"] == "robust"
+
+
+class KeyedSource:
+    """Calls an API that takes its key as a query parameter, as data.go.kr does."""
+
+    name, table = "fx", "fx_rates"
+
+    def fetch(self, http):
+        http.get("https://open.er-api.com/v6/latest/USD", params={"serviceKey": "SECRET-KEY", "pageNo": 1})
+        return pd.DataFrame(fx_rows())
+
+
+def test_raw_archive_never_stores_api_keys_sent_as_parameters(store, tmp_path):
+    http = RecordedHttp(("https://open.er-api.com/v6/latest/USD", {}, "fx_open_er_api.json"))
+
+    [result] = run_sources([KeyedSource()], store, http=http, raw_store=LocalRawStore(tmp_path))
+
+    raw = store.events(result.run_id).set_index("step").loc["fetch", "metrics"]["raw"]
+    with zipfile.ZipFile(raw) as z:
+        manifest = z.read("manifest.json").decode()
+    assert "SECRET-KEY" not in manifest
+    assert json.loads(manifest)[0]["params"] == {"serviceKey": "<redacted>", "pageNo": 1}
