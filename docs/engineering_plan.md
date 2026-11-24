@@ -135,7 +135,7 @@ The agent chat is a right-hand panel on pages 1–5.
 ## 8. Scoring and forecasting
 - **Scoring:** as in [03 §3](pm/03_data_analysis.md#3-preliminary-screen-hypothesis-only): winsorised min-max normalisation, pillar means, weighted sum, and P(TOP3) under ±20% and Dirichlet weights. Imputed pillar values are flagged and never filled silently. Growth also gets a log-linear slope (2019–25) as an alternative to the endpoint CAGR, which depends on the 2020 base year.
 - **Ranking backtest (M2):** score with 2015–19 data only; report the Spearman ρ against actual 2020–25 Korean export growth.
-- **Forecasting:** annual series have about 10 points, so the models are naïve, drift, damped ETS and log-linear trend, chosen per series by rolling-origin backtest against the naïve baseline (PRD §5.2). Monthly forecasts use the 관세청 series only. No Prophet (D19).
+- **Forecasting (implemented in `pipeline/forecast.py`):** each country's score is forecast from its own 6-year score history, each historical year scored only with data known then. Three models compete per country (no change, straight-line trend, damped trend with φ = 0.8) and the one with the lowest rolling-origin backtest error wins. P(TOP3) per future year comes from 2,000 simulations of each country's backtest error. Scores, not raw series, are forecast (D22). An out-of-sample check forecasts the latest year from the five before it; on the 2025 data the predicted TOP3 matched the actual TOP3, with an average score error of 3.0 points against 2.6 for no change. Macro indicators are not forecast. No Prophet (D19).
 
 ## 9. Security
 - The browser gets only the Supabase anon key. RLS allows `select` on data tables and denies all writes.

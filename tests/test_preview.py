@@ -185,3 +185,9 @@ def test_tariffs_warn_when_an_fta_exists_but_its_rates_are_not_entered():
 
     assert sugar["fta_with_korea"] == "ASEAN–Korea FTA (AKFTA)" and sugar["fta_rate_missing"] is True
     assert not any(t["fta_rate_missing"] for t in usa["tariffs"] if t["hs"] == "1704")
+
+
+def test_state_includes_the_score_trend_and_forecast():
+    trend = state(seeded_store())["trend"]
+
+    assert max(r["year"] for r in trend["history"]) == 2025 and min(r["year"] for r in trend["forecast"]) == 2026

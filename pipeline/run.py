@@ -18,6 +18,7 @@ from typing import Any, Protocol
 import pandas as pd
 
 from pipeline.db import Store, UpsertResult
+from pipeline.forecast import trends
 from pipeline.http import Http
 from pipeline.indicators import InsufficientData, rankings
 from pipeline.raw import LocalRawStore, RecordingHttp, SupabaseRawStore
@@ -55,13 +56,15 @@ def _rerank(store: Store, run_id: str, force: bool = False) -> None:
     if not force and not store.ranking_is_stale():
         store.log_event(run_id, "rerank", "skipped", message="no trade or macro data changed")
         return
+    trade, indicators = store.read("trade_flows"), store.read("country_indicators")
     try:
-        by_category = rankings(store.read("trade_flows"), store.read("country_indicators"))
+        by_category = rankings(trade, indicators)
     except InsufficientData as e:
         store.log_event(run_id, "rerank", "skipped", message=str(e))
         return
     for category, rows in by_category.items():
         store.save_ranking(run_id, category, "corrected", "default", rows)
+    store.save_ranking(run_id, "all", "trend", "default", trends(trade, indicators))
     top3 = [r["iso3"] for r in by_category["all"][:3]]
     store.log_event(run_id, "rerank", metrics={"categories": len(by_category), "top3": top3})
 

@@ -168,6 +168,20 @@
   .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .chart .cross { stroke: var(--axis); stroke-width: 1; }
   .linkbtn { background: none; border: 0; padding: 0; color: var(--series-1); font-weight: 600; font-size: 13px; }
+  .viz { --muted-line: #b5b3ab; }
+  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .viz { --muted-line: #5c5b56; } }
+  :root[data-theme="dark"] .viz { --muted-line: #5c5b56; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  .chips button { font-size: 13px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
+  .chips button::before { content: ""; width: 12px; height: 3px; border-radius: 2px; background: var(--c); }
+  .chips button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .chart .band { opacity: .18; }
+  .chart .divider { stroke: var(--axis); stroke-dasharray: 3 3; }
+  .chart .dim { opacity: .22; }
+  .chart .hl { stroke-width: 3.5; }
+  .pred { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .pred .big { font-size: 30px; font-weight: 700; line-height: 1.1; }
+  .move-up { color: var(--ink); } .move-down { color: var(--ink); }
   .viz { --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; }
   @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .viz { --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; } }
   :root[data-theme="dark"] .viz { --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; }
@@ -206,6 +220,21 @@
       <section aria-labelledby="top3-h">
         <h2 id="top3-h">TOP3 and why</h2>
         <div class="top3" id="top3"></div>
+      </section>
+
+      <section class="card viz" aria-labelledby="trend-h">
+        <div class="page-head" style="margin:0"><h2 id="trend-h" style="margin:0">Top 10 markets: past, present and forecast</h2>
+          <button class="linkbtn" data-toggle-trend>Show as table</button></div>
+        <p class="fact" style="margin:4px 0 0">Score each year using only the data known then (solid), and the forecast to <span id="trend-end"></span> (dashed). All products. Select a country to highlight it and see its 80% forecast range.</p>
+        <div class="chips" id="trend-chips" role="group" aria-label="Highlight a country"></div>
+        <div class="chart" id="trend-chart"></div>
+      </section>
+
+      <section aria-labelledby="pred-h">
+        <div class="page-head" style="margin:0 0 12px"><h2 id="pred-h" style="margin:0">Predicted TOP3 <span class="fact" style="font-weight:400">(the markets most likely to be in the top three)</span></h2>
+          <div class="tabs" id="pred-years" role="group" aria-label="Forecast year" style="margin:0"></div></div>
+        <div class="pred" id="pred"></div>
+        <p class="note" id="pred-note"></p>
       </section>
 
       <section class="card" aria-labelledby="all-h">
@@ -461,6 +490,109 @@ function renderExportsChart() {
   el.querySelector("#hit").addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
 }
 
+/* ---------- trend + forecast ---------- */
+let trendHl = null, trendTable = false, predYear = null;
+const TOP_COLORS = ["var(--c1)", "var(--c2)", "var(--c3)"];
+
+function trendData(st) {
+  const t = st.trend;
+  if (!t || !t.history?.length) return null;
+  const lastYear = Math.max(...t.history.map(r => r.year));
+  const top10 = t.history.filter(r => r.year === lastYear).sort((a, b) => a.rank - b.rank).slice(0, 10);
+  const color = Object.fromEntries(top10.map((r, i) => [r.iso3, i < 3 ? TOP_COLORS[i] : "var(--muted-line)"]));
+  const years = [...new Set([...t.history, ...t.forecast].map(r => r.year))].sort();
+  const get = (iso, y) => (y <= lastYear ? t.history : t.forecast).find(r => r.iso3 === iso && r.year === y);
+  return { t, lastYear, top10, color, years, get };
+}
+
+let trendKey = "";
+function renderTrend(st, force = false) {
+  const key = `${st.trend ? JSON.stringify(st.trend).length : 0}|${trendHl}|${trendTable}`;
+  if (!force && key === trendKey) return;
+  trendKey = key;
+  const d = trendData(st), el = document.getElementById("trend-chart");
+  if (!d) { el.innerHTML = `<p class="empty">The trend appears after the first ranking.</p>`; document.getElementById("trend-chips").innerHTML = ""; return; }
+  document.getElementById("trend-end").textContent = d.years.at(-1);
+  document.getElementById("trend-chips").innerHTML = d.top10.map(r =>
+    `<button data-hl="${esc(r.iso3)}" aria-pressed="${trendHl === r.iso3}" style="--c:${d.color[r.iso3]}">${esc(r.name)}</button>`).join("");
+  document.querySelector("[data-toggle-trend]").textContent = trendTable ? "Show chart" : "Show as table";
+  if (trendTable) {
+    el.innerHTML = `<div class="scroll"><table><caption>Score by year; forecast years are marked “f”.</caption><thead><tr><th scope="col">Country</th>${
+      d.years.map(y => `<th class="num" scope="col">${y}${y > d.lastYear ? " f" : ""}</th>`).join("")}</tr></thead><tbody>${
+      d.top10.map(r => `<tr><td>${esc(r.name)}</td>${d.years.map(y => { const p = d.get(r.iso3, y); return `<td class="num">${p ? p.score.toFixed(1) : "—"}</td>`; }).join("")}</tr>`).join("")
+    }</tbody></table></div>`;
+    return;
+  }
+  const W = 820, H = 320, L = 40, R = 150, T = 12, B = 28, w = W - L - R, h = H - T - B;
+  const pts = d.top10.flatMap(r => d.years.map(y => d.get(r.iso3, y)).filter(Boolean));
+  const lo = Math.max(0, Math.floor((Math.min(...pts.map(p => p.low ?? p.score)) - 2) / 10) * 10);
+  const hi = Math.min(100, Math.ceil((Math.max(...pts.map(p => p.high ?? p.score)) + 2) / 10) * 10);
+  const x = y => L + (y - d.years[0]) / (d.years.at(-1) - d.years[0]) * w, yv = v => T + h - (v - lo) / (hi - lo) * h;
+  const path = (iso, ys) => ys.map(y => d.get(iso, y)).map((p, i, a) => p ? `${i && a[i - 1] ? "L" : "M"}${x(p.year).toFixed(1)},${yv(p.score).toFixed(1)}` : "").join("");
+  const past = d.years.filter(y => y <= d.lastYear), future = [d.lastYear, ...d.years.filter(y => y > d.lastYear)];
+  const order = [...d.top10].reverse();  // draw the TOP3 last so they sit on top
+  const cls = iso => trendHl ? (iso === trendHl ? "hl" : "dim") : "";
+  const band = trendHl ? (() => {
+    const f = future.slice(1).map(y => d.get(trendHl, y)).filter(Boolean), a = d.get(trendHl, d.lastYear);
+    if (!f.length || !a) return "";
+    const top = [a, ...f].map(p => `${x(p.year)},${yv(p.high ?? p.score)}`), bot = [a, ...f].reverse().map(p => `${x(p.year)},${yv(p.low ?? p.score)}`);
+    return `<polygon class="band" points="${[...top, ...bot].join(" ")}" style="fill:${d.color[trendHl] === "var(--muted-line)" ? "var(--ink)" : d.color[trendHl]}"/>`;
+  })() : "";
+  const ends = d.top10.map(r => ({ r, y: yv(d.get(r.iso3, d.years.at(-1))?.score ?? r.score) })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+  const ticks = Array.from({ length: (hi - lo) / 10 + 1 }, (_, i) => lo + i * 10);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Line chart of the top 10 markets' scores from ${d.years[0]} to ${d.years.at(-1)}; ${d.lastYear} onwards is a forecast. Use “Show as table” for the values.">
+    ${ticks.map(t => `<line class="gridline" x1="${L}" x2="${L + w}" y1="${yv(t)}" y2="${yv(t)}"/><text x="${L - 8}" y="${yv(t) + 4}" text-anchor="end">${t}</text>`).join("")}
+    ${d.years.map(y => `<text x="${x(y)}" y="${H - 6}" text-anchor="middle">${y}</text>`).join("")}
+    <line class="divider" x1="${x(d.lastYear)}" x2="${x(d.lastYear)}" y1="${T}" y2="${T + h}"/>
+    <text x="${x(d.lastYear) + 6}" y="${T + 12}">Forecast →</text>
+    ${band}
+    ${order.map(r => `<g class="${cls(r.iso3)}"><path class="line" style="stroke:${d.color[r.iso3]}" d="${path(r.iso3, past)}"/>
+       <path class="line" style="stroke:${d.color[r.iso3]};stroke-dasharray:6 5" d="${path(r.iso3, future)}"/></g>`).join("")}
+    ${ends.map(e => `<text x="${L + w + 8}" y="${e.y + 4}" style="${trendHl === e.r.iso3 ? "font-weight:700;fill:var(--ink)" : ""}" class="${trendHl && trendHl !== e.r.iso3 ? "dim" : ""}">${esc(e.r.name)}</text>`).join("")}
+    <line class="cross" id="tcross" y1="${T}" y2="${T + h}" visibility="hidden"/>
+    <rect id="thit" x="${L}" y="${T}" width="${w}" height="${h}" fill="transparent"/>
+  </svg>`;
+  const svg = el.querySelector("svg"), cross = el.querySelector("#tcross"), tip = document.getElementById("tip");
+  el.querySelector("#thit").addEventListener("mousemove", ev => {
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const yr = Math.round(d.years[0] + (loc.x - L) / w * (d.years.at(-1) - d.years[0]));
+    const year = Math.max(d.years[0], Math.min(d.years.at(-1), yr));
+    cross.setAttribute("x1", x(year)); cross.setAttribute("x2", x(year)); cross.setAttribute("visibility", "visible");
+    const rows = d.top10.map(r => ({ r, p: d.get(r.iso3, year) })).filter(o => o.p).sort((a, b) => b.p.score - a.p.score);
+    tip.innerHTML = `<b>${year}${year > d.lastYear ? " (forecast)" : ""}</b><dl>${rows.map(o => `<dt>${esc(o.r.name)}</dt><dd>${o.p.score.toFixed(1)}</dd>`).join("")}</dl>`;
+    tip.hidden = false; tip.style.left = Math.min(ev.clientX + 14, innerWidth - 310) + "px"; tip.style.top = Math.min(ev.clientY + 14, innerHeight - 280) + "px";
+  });
+  el.querySelector("#thit").addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+}
+
+function renderPredicted(st) {
+  const d = trendData(st), el = document.getElementById("pred");
+  if (!d) { el.innerHTML = ""; document.getElementById("pred-years").innerHTML = ""; document.getElementById("pred-note").textContent = ""; return; }
+  const future = d.years.filter(y => y > d.lastYear);
+  if (!future.includes(predYear)) predYear = future.at(-1);
+  document.getElementById("pred-years").innerHTML = future.map(y => `<button data-pred="${y}" aria-pressed="${y === predYear}">${y}</button>`).join("");
+  const yearRows = d.t.forecast.filter(r => r.year === predYear).sort((a, b) => b.p_top3 - a.p_top3 || a.rank - b.rank);
+  const top = yearRows.slice(0, 3), next = yearRows.slice(3, 5);
+  const nowRank = iso => d.t.history.find(r => r.iso3 === iso && r.year === d.lastYear)?.rank;
+  const MODEL = { "no change": "no change", drift: "straight-line trend", "damped drift": "damped trend" };
+  el.innerHTML = top.map(r => {
+    const was = nowRank(r.iso3), move = was ? was - r.rank : 0;
+    return `<article class="card"><div class="t-rank">${predYear} · expected rank #${r.rank}</div>
+      <div class="t-name"><a class="row-link" href="#/country/${esc(r.iso3)}/all">${esc(r.name)}</a></div>
+      <div class="big" style="margin-top:8px">${Math.round(r.p_top3 * 100)}%</div>
+      <div class="fact">chance of being in the TOP3 in ${predYear}</div>
+      <p class="fact" style="margin:8px 0 0">Expected score ${r.score.toFixed(1)} (likely ${r.low.toFixed(0)}–${r.high.toFixed(0)}) · ${
+        move > 0 ? `up ${move} from #${was} today` : move < 0 ? `down ${-move} from #${was} today` : `same as today (#${was})`} · ${MODEL[r.model] || r.model}</p>
+    </article>`;
+  }).join("");
+  const ho = d.t.holdout;
+  const behind = next.length ? `<b>Close behind:</b> ${next.map(r => `${esc(r.name)} ${Math.round(r.p_top3 * 100)}%`).join(", ")}. ` : "";
+  document.getElementById("pred-note").innerHTML = `${behind}${esc(d.t.method)} <b>Accuracy check:</b> forecasting ${ho.year} from ${ho.trained_on} only, the predicted TOP3 (${esc(ho.predicted_top3.join(", "))}) ${
+    ho.predicted_top3.join() === ho.actual_top3.join() ? "matched" : "differed from"} the actual TOP3 (${esc(ho.actual_top3.join(", "))}); the average score error was ${ho.model_mae.toFixed(1)} points (${ho.no_change_mae.toFixed(1)} for simply assuming no change). Macro indicators are not forecast.`;
+}
+
 /* ---------- management ---------- */
 function renderKpis(st) {
   const top = (st.ranking.all || []).slice(0, 3).map(c => c.reasons?.name || c.iso3);
@@ -532,7 +664,7 @@ async function refresh() {
   try {
     const st = await (await fetch("/api/state")).json();
     last = st;
-    renderFreshness(st); renderTop3(st); renderRanking(st);
+    renderFreshness(st); renderTop3(st); renderTrend(st); renderPredicted(st); renderRanking(st);
     renderKpis(st); renderSources(st); renderFeed(st); renderRevisions(st);
   } catch (e) {
     document.getElementById("side-foot").textContent = "Server not reachable";
@@ -542,6 +674,11 @@ async function refresh() {
 document.addEventListener("click", async e => {
   const run = e.target.closest("[data-run]");
   if (run) { run.disabled = true; run.textContent = "Starting…"; await fetch(`/api/run?source=${encodeURIComponent(run.dataset.run)}`, { method: "POST" }); refresh(); }
+  const hl = e.target.closest("[data-hl]");
+  if (hl) { trendHl = trendHl === hl.dataset.hl ? null : hl.dataset.hl; if (last) renderTrend(last); return; }
+  if (e.target.closest("[data-toggle-trend]")) { trendTable = !trendTable; if (last) renderTrend(last); return; }
+  const py = e.target.closest("[data-pred]");
+  if (py) { predYear = +py.dataset.pred; if (last) renderPredicted(last); return; }
   const row = e.target.closest("tr[data-href]");
   if (row && !e.target.closest("a")) location.hash = row.dataset.href;
   const ccat = e.target.closest("[data-ccat]");

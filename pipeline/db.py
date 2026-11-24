@@ -290,7 +290,7 @@ class Store:
                 )
             )
 
-    def latest_ranking(self, category: str = "all", variant: str = "corrected", preset: str = "default") -> list[dict]:
+    def latest_ranking(self, category: str = "all", variant: str = "corrected", preset: str = "default"):
         r = ranking_snapshots.c
         q = (
             ranking_snapshots.select()

@@ -386,3 +386,13 @@ def test_raw_archive_never_stores_api_keys_sent_as_parameters(store, tmp_path):
         manifest = z.read("manifest.json").decode()
     assert "SECRET-KEY" not in manifest
     assert json.loads(manifest)[0]["params"] == {"serviceKey": "<redacted>", "pageNo": 1}
+
+
+def test_reranking_also_stores_score_history_and_forecast(store):
+    run_sources(scoring_sources(), store, http=None)
+
+    trend = store.latest_ranking(variant="trend")
+    assert {r["year"] for r in trend["history"]} == {2020, 2021, 2022, 2023, 2024, 2025}
+    assert {r["year"] for r in trend["forecast"]} == {2026, 2027, 2028}
+    assert trend["holdout"]["actual_top3"] == ["USA", "CHN", "PHL"]
+    assert next(r for r in trend["history"] if r["iso3"] == "USA")["name"] == "United States"

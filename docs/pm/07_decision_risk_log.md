@@ -24,6 +24,7 @@
 | D19 | **No Prophet**; naïve/drift/damped-ETS/log-linear chosen by backtest; monthly forecasts only on 관세청 data | Prophet 12-month forecasts | ~10 annual points per series; Prophet needs sub-annual data | [03 §4](03_data_analysis.md#4-limitations-of-this-analysis) |
 | D20 | `WellGTM_Master_Plan.md` and `WellGTM_Infra_Architecture.md` are **superseded** and archived; scheduled ingestion and the Automation page become Must | Keep both | They contradict the PRD (mock data, hosting, embeddings, forecasting) | [Gap analysis](../gap_analysis_and_m1_plan.md) |
 | D21 | Hosting: **GitHub Pages** (frontend) + **GitHub Actions** (ingestion) + **HF Spaces** (API/agent) + **Supabase** (data) | Vercel + HF | Everything deploys from GitHub; GitHub can't host a long-running API | [Engineering plan §2](../engineering_plan.md#2-architecture) |
+| D22 | **Forecast the score, not the raw data** | Forecast every trade series, then re-score | Re-scoring forecast data moves the 5-year CAGR base years and shifted India from #4 to #13 in one forecast year without new information; compounding a bounded score took Brazil from 52.5 to 89.9 | `tests/test_forecast.py` regression tests |
 
 ## 2. Assumptions register
 | ID | Assumption | Confidence | Validation plan |
