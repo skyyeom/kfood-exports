@@ -2,8 +2,10 @@ import openpyxl
 import pytest
 from fakes import FIXTURES, RecordedHttp
 
+from pipeline.config import CANDIDATES
 from pipeline.sources.comtrade import ComtradeSource
 from pipeline.sources.fx import FxSource
+from pipeline.sources.kcs_monthly import KcsItemsSource, KcsMonthlySource, KcsNationsSource
 from pipeline.sources.pinksheet import PinkSheetSource
 from pipeline.sources.tariffs import TariffSource
 from pipeline.sources.wdi import WdiSource
@@ -180,3 +182,76 @@ def test_tariff_source_treats_a_404_for_one_country_as_no_rows(tmp_path):
     rows = TariffSource(countries=["RUS", "USA"], overrides_file=tmp_path / "none.yaml").fetch(http)
 
     assert set(rows.importer_iso3) == {"USA"}
+
+
+KCS = "https://apis.data.go.kr/1220000/nitemtrade/getNitemtradeList"
+
+
+def kcs_rows():
+    http = RecordedHttp((KCS, {"hsSgn": "2105", "strtYymm": "202601"}, "kcs_nitemtrade_2105_2026.xml"))
+    return KcsMonthlySource(api_key="test-key", years=[2026], hs=["2105"]).fetch(http)
+
+
+def test_kcs_source_reads_monthly_korea_exports_by_hs6_and_destination():
+    rows = kcs_rows().set_index(["partner_iso3", "hs", "period"])
+
+    us = rows.loc[("USA", "210500", "202610")]
+    assert (us.value_usd, us.net_kg, us.flow, us.freq, us.reporter_iso3) == (4664249.0, 1078438.0, "X", "M", "KOR")
+    assert rows.loc[("PHL", "210500", "202603"), "value_usd"] == 603062.0
+
+
+def test_kcs_source_adds_a_world_total_per_line_and_month_and_skips_the_grand_total_row():
+    rows = kcs_rows()
+
+    world = rows[rows.partner_iso3 == "WLD"].set_index("period")
+    assert world.loc["202610", "value_usd"] == 10151847.0  # sum over all 45 destinations that month
+    assert not rows.period.str.contains("총계").any()
+    assert set(rows.partner_iso3) <= set(CANDIDATES) | {"WLD"}
+
+
+def test_kcs_source_reports_api_errors_sent_with_http_200():
+    http = RecordedHttp((KCS, {}, "kcs_nitemtrade_error.xml"))
+
+    with pytest.raises(RuntimeError, match="1년이내"):
+        KcsMonthlySource(api_key="test-key", years=[2026], hs=["2105"]).fetch(http)
+
+
+def test_kcs_source_queries_one_calendar_year_per_call():
+    http = RecordedHttp(
+        (KCS, {"strtYymm": "202501", "endYymm": "202512"}, "kcs_nitemtrade_2105_2026.xml"),
+        (KCS, {"strtYymm": "202601", "endYymm": "202612"}, "kcs_nitemtrade_2105_2026.xml"),
+    )
+
+    KcsMonthlySource(api_key="test-key", years=[2025, 2026], hs=["2105"]).fetch(http)  # no unexpected request
+
+
+ITEMS = "https://apis.data.go.kr/1220000/Itemtrade/getItemtradeList"
+NATIONS = "https://apis.data.go.kr/1220000/nationtrade/getNationtradeList"
+
+
+def test_kcs_items_source_reads_monthly_world_exports_per_hs10_product_line():
+    http = RecordedHttp((ITEMS, {"hsSgn": "2105", "strtYymm": "202601"}, "kcs_itemtrade_2105_2026.xml"))
+
+    rows = KcsItemsSource(api_key="test-key", years=[2026], hs=["2105"]).fetch(http).set_index(["hs", "period"])
+
+    line = rows.loc[("2105001090", "202610")]
+    assert (line.value_usd, line.net_kg, line.partner_iso3, line.freq) == (9207280.0, 2339473.0, "WLD", "M")
+    assert rows.xs("202610", level="period").value_usd.sum() == 10151847.0  # equals the by-country world total
+
+
+def test_kcs_nations_source_reads_koreas_total_monthly_exports_to_each_candidate():
+    http = RecordedHttp((NATIONS, {"strtYymm": "202601", "endYymm": "202612"}, "kcs_nationtrade_2026.xml"))
+
+    rows = KcsNationsSource(api_key="test-key", years=[2026]).fetch(http).set_index(["partner_iso3", "period"])
+
+    ph = rows.loc[("PHL", "202601")]
+    assert (ph.value_usd, ph.hs, ph.flow) == (1336850486.0, "TOTAL", "X")
+    assert len(rows.index.get_level_values(0).unique()) == 30
+
+
+def test_kcs_sources_without_a_key_are_skipped():
+    from pipeline.sources.base import SkipSource
+
+    for source in (KcsItemsSource(api_key=""), KcsNationsSource(api_key="")):
+        with pytest.raises(SkipSource):
+            source.fetch(RecordedHttp())

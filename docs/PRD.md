@@ -235,7 +235,7 @@ Requirement IDs link to user stories in [04_user_stories.md](pm/04_user_stories.
 | Tariffs | WITS/TRAINS + override file | Weekly check | Effective dates; applied = min(MFN, preferential) + additional duties |
 | Consumer trends | Google Trends (one-off local snapshot); Hallyu indicators | Manual | As-of date displayed |
 | FX | open.er-api / Frankfurter | Daily | For FX-swing alerts |
-| Korea exports, monthly, HS10 × country | 관세청 via data.go.kr (free key) | Weekly check | Monthly monitoring, product-level fit, forecasts |
+| Korea exports, monthly: HS6 × destination, HS10 world totals, all-goods totals per country | 관세청 via data.go.kr (free key; 3 APIs) | Monthly, after the ~15th update | Monthly monitoring, product-level fit, forecasts. Validated: annual sums equal Comtrade's Korea-reported figures 2020–25 |
 | Commodity prices | World Bank Pink Sheet (cocoa, sugar, wheat, palm oil) | Monthly | Context for price-driven value growth (DR-9) |
 | Regulation corpus | Public regulator and trade-body documents (FDA, GACC, BPJPH, JAKIM, FSSAI, GSO, EU Novel Food, KOTRA/aT summaries) | Monitored URLs, daily hash check | Metadata: source URL, title, country, date |
 

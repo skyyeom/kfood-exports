@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       source:
-        description: "One source to run (blank = all weekly sources: comtrade wdi tariffs kcs_monthly)"
+        description: "One source to run (blank = all weekly sources: comtrade wdi tariffs)"
         required: false
         default: ""
 
@@ -18,5 +18,5 @@ jobs:
   ingest:
     uses: ./.github/workflows/_ingest.yml
     with:
-      sources: ${{ inputs.source || 'comtrade wdi tariffs kcs_monthly' }}
+      sources: ${{ inputs.source || 'comtrade wdi tariffs' }}
     secrets: inherit

@@ -33,7 +33,9 @@ SCHEDULES = {
     "comtrade": (0, None, 18),
     "wdi": (0, None, 18),
     "tariffs": (0, None, 18),
-    "kcs_monthly": (0, None, 18),
+    "kcs_monthly": (None, 16, 19),
+    "kcs_items": (None, 16, 19),
+    "kcs_nations": (None, 16, 19),
     "pinksheet": (None, 5, 19),
 }
 

@@ -33,6 +33,39 @@ CANDIDATES: dict[str, tuple[int, str]] = {
     "SAU": (682, "Saudi Arabia"),
     "RUS": (643, "Russia"),
 }
+ISO2 = {  # 관세청 (data.go.kr) uses ISO 3166 alpha-2 country codes
+    "USA": "US",
+    "CAN": "CA",
+    "MEX": "MX",
+    "BRA": "BR",
+    "GBR": "GB",
+    "DEU": "DE",
+    "FRA": "FR",
+    "NLD": "NL",
+    "POL": "PL",
+    "CHN": "CN",
+    "JPN": "JP",
+    "TWN": "TW",
+    "HKG": "HK",
+    "MNG": "MN",
+    "VNM": "VN",
+    "THA": "TH",
+    "IDN": "ID",
+    "PHL": "PH",
+    "MYS": "MY",
+    "SGP": "SG",
+    "KHM": "KH",
+    "MMR": "MM",
+    "IND": "IN",
+    "PAK": "PK",
+    "KAZ": "KZ",
+    "AUS": "AU",
+    "NZL": "NZ",
+    "ARE": "AE",
+    "SAU": "SA",
+    "RUS": "RU",
+}
+
 # WITS uses ISO 3166 numeric codes; these differ from Comtrade's M49 codes above
 WITS_CODE_OVERRIDES = {"USA": 840, "FRA": 250, "IND": 356, "TWN": 158}
 

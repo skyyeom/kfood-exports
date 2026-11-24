@@ -9,7 +9,7 @@ from pipeline.db import DATA_TABLES, cast_value
 
 ISO3 = pa.Check.str_matches(r"^[A-Z]{3}$")
 ISO_DATE = pa.Check.str_matches(r"^\d{4}-\d{2}-\d{2}$")
-HS_CODE = pa.Check.str_matches(r"^\d{4}(\d{2})?(\d{4})?$")
+HS_CODE = pa.Check.str_matches(r"^(\d{4}(\d{2})?(\d{4})?|TOTAL)$")  # TOTAL = all goods (관세청 국가별)
 
 
 def _key(*checks: pa.Check) -> pa.Column:

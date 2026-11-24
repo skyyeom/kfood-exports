@@ -24,7 +24,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # Python 3.12+
 .venv/bin/python -m pipeline.run --source fx          # one source; or --all
 .venv/bin/pytest -q
 ```
-Without `DATABASE_URL`, data goes to `data/local.db` (SQLite) and raw responses to `data/raw/`.
+For local runs, keep keys in `.env` (gitignored) and load them with `set -a; . ./.env; set +a`. Without `DATABASE_URL`, data goes to `data/local.db` (SQLite) and raw responses to `data/raw/`.
 
 **Local dashboard preview:** `.venv/bin/python -m pipeline.preview`, then open http://localhost:8765. It shows source freshness with **Run now** buttons, the live run feed, revised values and the TOP3 screen, read live from the same database. It is a development preview of the Automation & Data Health page until the M3 frontend exists.
 
@@ -38,15 +38,16 @@ Without `DATABASE_URL`, data goes to `data/local.db` (SQLite) and raw responses 
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → service_role key |
 | `COMTRADE_API_KEY` | Optional. A free key from comtradeplus.un.org lifts the 500-row preview cap |
-| `KCS_API_KEY` | Optional. A data.go.kr key for 관세청 monthly exports; without it that source is logged as skipped |
+| `KCS_API_KEY` | Optional. A data.go.kr key (Decoding key). Apply (활용신청) for 관세청 품목별 국가별, 품목별 and 국가별 수출입실적; one key covers all three. Without it the 관세청 sources are logged as skipped |
 
 3. Run each workflow once from the Actions tab (**Ingest (daily / weekly / monthly)** → Run workflow). Every run appears in `ingest_runs` with a link back to its GitHub job. The pipeline refuses to run against a database without these tables, rather than create tables that have no RLS.
 
 | Workflow | Schedule (KST) | Sources |
 |---|---|---|
 | `ingest-daily.yml` | 02:00 daily | fx (regulation pages join in M4) |
-| `ingest-weekly.yml` | 03:00 Tuesday | comtrade, wdi, tariffs, kcs_monthly |
+| `ingest-weekly.yml` | 03:00 Tuesday | comtrade, wdi, tariffs |
 | `ingest-monthly.yml` | 04:00 on the 6th | pinksheet |
+| `ingest-kcs.yml` | 04:00 on the 17th (after 관세청's update around the 15th) | kcs_monthly, kcs_items, kcs_nations |
 
 Tariff policy changes go in [`pipeline/tariff_overrides.yaml`](pipeline/tariff_overrides.yaml); the next weekly run records the change as a revision.
 

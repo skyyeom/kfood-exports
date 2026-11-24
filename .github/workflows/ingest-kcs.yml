@@ -1,0 +1,22 @@
+name: Ingest (관세청 monthly)
+# 04:00 KST on the 17th, after 관세청 publishes revisions around the 15th. Also runnable from the Actions tab or the dashboard's "Run now" (workflow_dispatch).
+on:
+  schedule:
+    - cron: "0 19 16 * *"
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "One source to run (blank = all 관세청 sources: kcs_monthly kcs_items kcs_nations)"
+        required: false
+        default: ""
+
+concurrency:
+  group: ingest-kcs
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    uses: ./.github/workflows/_ingest.yml
+    with:
+      sources: ${{ inputs.source || 'kcs_monthly kcs_items kcs_nations' }}
+    secrets: inherit

@@ -76,7 +76,9 @@ tests/             pytest
 |---|---|---|---|---|---|
 | UN Comtrade (annual, HS4) | `trade_flows` | `comtradeapi.un.org/public/v1/preview/C/A/HS`; with key: `/data/v1/get/C/A/HS` | Optional (free key lifts the 500-row cap) | Weekly | New reporter-years; revisions to past values |
 | World Bank WDI + LPI | `country_indicators` | `api.worldbank.org/v2/country/{iso}/indicator/{code}` | No | Weekly | New years; revisions |
-| 관세청 monthly exports (HS10 × country) | `trade_flows` (`freq=M`) | data.go.kr 관세청 품목별 국가별 수출입실적 (verify the exact operation during M1) | Yes (free) | Weekly | A newly published month |
+| 관세청 monthly exports by HS6 × destination (`kcs_monthly`) | `trade_flows` (`freq=M`, plus a `WLD` total per line) | `apis.data.go.kr/1220000/nitemtrade/getNitemtradeList`: one call per HS4 per calendar year returns all destinations | Yes (free, one key for all three) | Monthly, 17th | New month; revisions to earlier months (관세청 updates around the 15th) |
+| 관세청 world exports by HS10 line (`kcs_items`) | `trade_flows` (`partner=WLD`) | `…/Itemtrade/getItemtradeList` | Same key | Monthly, 17th | Product-level detail; cross-check of the by-country total |
+| 관세청 total exports per country, all goods (`kcs_nations`) | `trade_flows` (`hs=TOTAL`) | `…/nationtrade/getNationtradeList`: one call per year returns all countries | Same key | Monthly, 17th | Context: food's share of Korea's exports to a market |
 | WITS tariffs + overrides | `tariffs` | WITS SDMX API + `pipeline/tariff_overrides.yaml` | No | Weekly | Rate changes, effective dates |
 | FX | `fx_rates` | `open.er-api.com/v6/latest/USD` (covers VND, KZT, PKR, which ECB-based feeds lack) | No | Daily | New rates; FX-swing signal (M5) |
 | World Bank Pink Sheet | `commodity_prices` | CMO historical monthly workbook (URL configurable; it changes each release) | No | Monthly | A new month (cocoa, sugar, wheat, palm oil) |
@@ -97,7 +99,7 @@ Each `python -m pipeline.run --source X` executes these steps. Each step writes 
 
 Steps 7–8 arrive in M5: anomaly detection on the changed rows, then email.
 
-**Schedules** (cron is in UTC): `ingest-daily.yml` at 02:00 KST: fx (regulation pages join in M4). `ingest-weekly.yml` at 03:00 KST on Tuesdays (Monday 18:00 UTC): comtrade, wdi, tariffs, kcs_monthly. `ingest-monthly.yml` at 04:00 KST on the 6th: pinksheet. All three call the reusable `_ingest.yml` and accept `workflow_dispatch` with a `source` input.
+**Schedules** (cron is in UTC): `ingest-daily.yml` at 02:00 KST: fx (regulation pages join in M4). `ingest-weekly.yml` at 03:00 KST on Tuesdays (Monday 18:00 UTC): comtrade, wdi, tariffs. `ingest-kcs.yml` at 04:00 KST on the 17th: kcs_monthly, kcs_items, kcs_nations. `ingest-monthly.yml` at 04:00 KST on the 6th: pinksheet. All three call the reusable `_ingest.yml` and accept `workflow_dispatch` with a `source` input.
 
 **Keeping schedules alive:** GitHub disables schedules after 60 days with no repo activity, so a keepalive step uses the API to re-enable the workflow. Supabase pauses free projects after 7 days idle; the daily job prevents that.
 
