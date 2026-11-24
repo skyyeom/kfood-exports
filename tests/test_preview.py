@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 
+import pytest
 from analysis_data import load_tables
 from test_run import StaticSource, fx_rows
 
 from pipeline.db import Store
-from pipeline.preview import country_state, next_run, state
+from pipeline.preview import country_state, next_run, state, trends_state
 from pipeline.run import run_sources
 
 
@@ -191,3 +192,81 @@ def test_state_includes_the_score_trend_and_forecast():
     trend = state(seeded_store())["trend"]
 
     assert max(r["year"] for r in trend["history"]) == 2025 and min(r["year"] for r in trend["forecast"]) == 2026
+
+
+def months(n=24, start=(2024, 11)):
+    y, m = start
+    out = []
+    for _ in range(n):
+        out.append(f"{y}{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def trends_store():
+    s = Store("sqlite://")
+    s.create_all()
+    periods = months()  # 2024-11 .. 2026-10
+    flows = []
+    for i, p in enumerate(periods):
+        later = i >= 12
+        for partner, hs, before, after in [
+            ("USA", "190590", 1.0e6, 2.0e6),
+            ("PHL", "210500", 1.0e6, 1.5e6),
+            ("WLD", "190590", 3.0e6, 4.0e6),
+            ("WLD", "210500", 1.0e6, 1.2e6),
+        ]:
+            flows.append(
+                {
+                    "source": "kcs_monthly",
+                    "reporter_iso3": "KOR",
+                    "partner_iso3": partner,
+                    "flow": "X",
+                    "hs": hs,
+                    "freq": "M",
+                    "period": p,
+                    "value_usd": after if later else before,
+                    "net_kg": 1.0,
+                    "imputed": False,
+                }
+            )
+    prices = [
+        {
+            "source": "pinksheet",
+            "commodity": "cocoa",
+            "month": f"{p[:4]}-{p[4:]}",
+            "price": 5.0 + i * 0.1,
+            "unit": "USD/kg",
+        }
+        for i, p in enumerate(periods)
+    ]
+    run_sources(
+        [StaticSource("kcs_monthly", "trade_flows", flows), StaticSource("pinksheet", "commodity_prices", prices)],
+        s,
+        http=None,
+    )
+    return s
+
+
+def test_trends_show_koreas_monthly_kfood_exports_by_category():
+    t = trends_state(trends_store())
+
+    by = {(r["category"], r["period"]): r["value_usd"] for r in t["kfood_monthly"]}
+    assert by[("1905", "202610")] == 4.0e6 and by[("2105", "202610")] == 1.2e6
+    assert t["kfood_latest"] == {"period": "202610", "value_usd": 5.2e6, "yoy": 5.2e6 / 4.0e6 - 1}
+
+
+def test_trends_rank_destinations_by_growth_over_the_last_12_months():
+    growth = {r["iso3"]: r for r in trends_state(trends_store())["destinations"]}
+
+    assert growth["USA"]["growth"] == pytest.approx(1.0) and growth["USA"]["last12_usd"] == 24.0e6
+    assert growth["PHL"]["growth"] == pytest.approx(0.5)
+    assert "WLD" not in growth
+
+
+def test_trends_include_commodity_prices_with_change_over_a_year():
+    [cocoa] = trends_state(trends_store())["commodities"]
+
+    assert (cocoa["commodity"], cocoa["unit"], cocoa["latest_month"]) == ("cocoa", "USD/kg", "2026-10")
+    assert cocoa["yoy"] == pytest.approx((5.0 + 2.3) / (5.0 + 1.1) - 1)
+    assert len(cocoa["series"]) == 24

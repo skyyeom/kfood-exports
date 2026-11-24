@@ -80,3 +80,23 @@ def test_rerank_recomputes_rankings_without_fetching_and_is_logged_as_a_run(tmp_
     assert code == 0
     assert [c["iso3"] for c in store.latest_ranking()[:3]] == ["USA", "CHN", "PHL"]
     assert store.runs().set_index("source").loc["rerank", "status"] == "success"
+
+
+def test_report_command_generates_and_stores_this_weeks_report(tmp_path):
+    from analysis_data import load_tables
+
+    db = f"sqlite:///{tmp_path}/w.db"
+    store = Store(db)
+    store.create_all()
+    trade, indicators = load_tables()
+    seed = store.start_run("seed")
+    store.upsert("trade_flows", trade, seed)
+    store.upsert("country_indicators", indicators, seed)
+    main(["--rerank"], env={"DATABASE_URL": db}, http=RecordedHttp())
+
+    code = main(["--report"], env={"DATABASE_URL": db}, http=RecordedHttp())
+
+    assert code == 0
+    [report] = store.list_reports()
+    assert report["headline"].startswith("First report")
+    assert store.runs().set_index("source").loc["report", "status"] == "success"

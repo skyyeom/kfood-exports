@@ -33,4 +33,4 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: for w in ingest-daily.yml ingest-weekly.yml ingest-monthly.yml ingest-kcs.yml; do gh workflow enable "$w" || true; done
+        run: for w in ingest-daily.yml ingest-weekly.yml ingest-monthly.yml ingest-kcs.yml report-weekly.yml; do gh workflow enable "$w" || true; done

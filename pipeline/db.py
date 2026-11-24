@@ -123,6 +123,17 @@ ranking_snapshots = sa.Table(
     sa.Column("payload", sa.JSON, nullable=False),
 )
 
+reports = sa.Table(
+    "reports",
+    metadata,
+    sa.Column("week", sa.Text, primary_key=True),  # ISO week, e.g. 2026-W48
+    sa.Column("generated_at", sa.Text, nullable=False),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("headline", sa.Text, nullable=False),
+    sa.Column("payload", sa.JSON, nullable=False),
+    sa.Column("markdown", sa.Text, nullable=False),
+)
+
 DATA_TABLES = {t.name: t for t in (trade_flows, country_indicators, tariffs, fx_rates, commodity_prices)}
 
 
@@ -282,20 +293,67 @@ class Store:
                 c.execute(data_revisions.insert(), revisions)
         return UpsertResult(len(new), len(changed), len(rows) - len(new) - len(changed))
 
-    def save_ranking(self, run_id: str, category: str, variant: str, preset: str, payload: list[dict]) -> None:
+    def save_ranking(
+        self, run_id: str, category: str, variant: str, preset: str, payload, computed_at: str | None = None
+    ) -> None:
         with self.engine.begin() as c:
             c.execute(
                 ranking_snapshots.insert().values(
-                    run_id=run_id, computed_at=now(), category=category, variant=variant, preset=preset, payload=payload
+                    run_id=run_id,
+                    computed_at=computed_at or now(),
+                    category=category,
+                    variant=variant,
+                    preset=preset,
+                    payload=payload,
                 )
             )
+
+    def ranking_before(self, cutoff: str, category: str = "all", variant: str = "corrected", preset: str = "default"):
+        """The latest ranking computed before `cutoff` (ISO time), e.g. the ranking as it stood a week ago."""
+        r = ranking_snapshots.c
+        q = (
+            ranking_snapshots.select()
+            .where(r.category == category, r.variant == variant, r.preset == preset, r.computed_at < cutoff)
+            .order_by(r.computed_at.desc(), r.id.desc())
+            .limit(1)
+        )
+        with self.engine.connect() as c:
+            row = c.execute(q).mappings().first()
+        return row["payload"] if row else None
+
+    def save_report(self, report: dict) -> None:
+        """Insert or replace the report for its ISO week."""
+        from pipeline.reports import to_markdown
+
+        values = {
+            "generated_at": report["generated_at"],
+            "title": report["title"],
+            "headline": report["headline"],
+            "payload": report,
+            "markdown": to_markdown(report),
+        }
+        with self.engine.begin() as c:
+            if c.execute(sa.select(reports.c.week).where(reports.c.week == report["week"])).first():
+                c.execute(reports.update().where(reports.c.week == report["week"]).values(**values))
+            else:
+                c.execute(reports.insert().values(week=report["week"], **values))
+
+    def list_reports(self) -> list[dict]:
+        q = sa.select(reports.c.week, reports.c.title, reports.c.headline, reports.c.generated_at)
+        with self.engine.connect() as c:
+            return [dict(r) for r in c.execute(q.order_by(reports.c.week.desc())).mappings()]
+
+    def get_report(self, week: str, markdown: bool = False):
+        with self.engine.connect() as c:
+            row = c.execute(sa.select(reports).where(reports.c.week == week)).mappings().first()
+        return None if row is None else row["markdown"] if markdown else row["payload"]
 
     def latest_ranking(self, category: str = "all", variant: str = "corrected", preset: str = "default"):
         r = ranking_snapshots.c
         q = (
             ranking_snapshots.select()
             .where(r.category == category, r.variant == variant, r.preset == preset)
-            .order_by(r.id.desc())
+            .order_by(r.computed_at.desc(), r.id.desc())
             .limit(1)
         )
         with self.engine.connect() as c:

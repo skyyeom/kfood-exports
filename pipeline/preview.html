@@ -168,9 +168,14 @@
   .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .chart .cross { stroke: var(--axis); stroke-width: 1; }
   .linkbtn { background: none; border: 0; padding: 0; color: var(--series-1); font-weight: 600; font-size: 13px; }
-  .viz { --muted-line: #b5b3ab; }
-  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .viz { --muted-line: #5c5b56; } }
-  :root[data-theme="dark"] .viz { --muted-line: #5c5b56; }
+  /* 10 series colours in rank order; validated as adjacent pairs in both modes (dataviz validate_palette.js) */
+  .viz { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948; --s9: #00a3c4; --s10: #b05a1e; }
+  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .viz { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --s9: #1597b3; --s10: #c46a2a; } }
+  :root[data-theme="dark"] .viz { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --s9: #1597b3; --s10: #c46a2a; }
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .spark svg { width: 100%; height: 56px; display: block; }
+  .spark .line { stroke: var(--s1); }
+  .up::before { content: "▲ "; font-size: 10px; } .down::before { content: "▼ "; font-size: 10px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
   .chips button { font-size: 13px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
   .chips button::before { content: ""; width: 12px; height: 3px; border-radius: 2px; background: var(--c); }
@@ -197,6 +202,12 @@
         <li><a href="#/overview" data-page="overview">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
           Overview</a></li>
+        <li><a href="#/trends" data-page="trends">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
+          Trends</a></li>
+        <li><a href="#/reports" data-page="reports">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>
+          Weekly reports</a></li>
         <li><a href="#/management" data-page="management">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6"/><circle cx="18" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>
           Management</a></li>
@@ -218,16 +229,9 @@
       <div class="tabs" id="tabs" role="group" aria-label="Product category"></div>
 
       <section aria-labelledby="top3-h">
-        <h2 id="top3-h">TOP3 and why</h2>
+        <h2 id="top3-h">TOP3 for <span id="top3-month"></span></h2>
+        <p class="fact" id="top3-basis" style="margin:-6px 0 12px"></p>
         <div class="top3" id="top3"></div>
-      </section>
-
-      <section class="card viz" aria-labelledby="trend-h">
-        <div class="page-head" style="margin:0"><h2 id="trend-h" style="margin:0">Top 10 markets: past, present and forecast</h2>
-          <button class="linkbtn" data-toggle-trend>Show as table</button></div>
-        <p class="fact" style="margin:4px 0 0">Score each year using only the data known then (solid), and the forecast to <span id="trend-end"></span> (dashed). All products. Select a country to highlight it and see its 80% forecast range.</p>
-        <div class="chips" id="trend-chips" role="group" aria-label="Highlight a country"></div>
-        <div class="chart" id="trend-chart"></div>
       </section>
 
       <section aria-labelledby="pred-h">
@@ -237,11 +241,61 @@
         <p class="note" id="pred-note"></p>
       </section>
 
+      <section class="card viz" id="trend-section" aria-labelledby="trend-h">
+        <div class="page-head" style="margin:0"><h2 id="trend-h" style="margin:0">Top 10 markets: past, present and forecast</h2>
+          <button class="linkbtn" data-toggle-trend>Show as table</button></div>
+        <p class="fact" style="margin:4px 0 0">Score each year using only the data known then (solid), and the forecast to <span id="trend-end"></span> (dashed). All products. Select a country to highlight it and see its 80% forecast range.</p>
+        <div class="chips" id="trend-chips" role="group" aria-label="Highlight a country"></div>
+        <div class="chart" id="trend-chart"></div>
+      </section>
+
       <section class="card" aria-labelledby="all-h">
         <h2 id="all-h">All scored countries</h2>
         <div class="scroll" id="ranking"></div>
         <p class="note">Score 0–100 combines four pillars: market growth 30%, market size 25%, Korean export momentum 30%, ease of entry 15%. Growth uses volume, not value, and re-export hubs are excluded.</p>
       </section>
+    </div>
+
+    <!-- TRENDS -->
+    <div data-view="trends" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Trends</h1>
+          <p class="lede">What is moving now: Korea's monthly K-food exports, where they are growing fastest, ingredient prices, and how the top markets' scores have changed.</p>
+        </div>
+      </div>
+      <div class="kpi-row" id="tr-kpis"></div>
+      <section class="card viz" aria-labelledby="tr-exp-h">
+        <div class="page-head" style="margin:0"><h2 id="tr-exp-h" style="margin:0">Korea's K-food exports to the world, by month</h2>
+          <button class="linkbtn" data-toggle-kfood>Show as table</button></div>
+        <p class="fact" style="margin:4px 0 0">관세청 monthly statistics (FOB, US$), four product categories.</p>
+        <div class="chart" id="tr-exp"></div>
+      </section>
+      <div id="trend-slot"></div>
+      <section class="card" aria-labelledby="tr-dest-h">
+        <h2 id="tr-dest-h">Destinations: last 12 months vs the 12 before</h2>
+        <div class="scroll" id="tr-dest"></div>
+      </section>
+      <section aria-labelledby="tr-com-h">
+        <h2 id="tr-com-h">Ingredient prices</h2>
+        <div class="kpi-row viz" id="tr-com"></div>
+        <p class="note">World Bank Pink Sheet monthly prices. Higher cocoa and sugar prices raise chocolate and confectionery import values without any change in demand, which is why the ranking uses volume.</p>
+      </section>
+    </div>
+
+    <!-- REPORTS -->
+    <div data-view="reports" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Weekly reports</h1>
+          <p class="lede">An automatic summary every Tuesday after the weekly data refresh: TOP3 and rank changes, exports, the forecast, ingredient prices and pipeline health. Every number comes from the stored data.</p>
+        </div>
+        <button class="primary" data-make-report>Generate this week's report</button>
+      </div>
+      <div class="two" style="grid-template-columns:minmax(220px,.5fr) minmax(0,1.5fr)">
+        <section class="card" aria-labelledby="rep-list-h"><h2 id="rep-list-h">Reports</h2><ul class="feed" id="rep-list"></ul></section>
+        <section class="card" aria-live="polite" id="rep-view"></section>
+      </div>
     </div>
 
     <!-- COUNTRY -->
@@ -263,7 +317,8 @@
       <section class="kpis" id="kpis" aria-label="Summary"></section>
 
       <section class="card" aria-labelledby="src-h">
-        <h2 id="src-h">Sources</h2>
+        <div class="page-head" style="margin:0 0 12px"><h2 id="src-h" style="margin:0">Sources</h2>
+          <button class="primary" id="run-all" data-run-all>Run all sources</button></div>
         <div class="sources" id="sources"></div>
       </section>
 
@@ -331,8 +386,12 @@ function route() {
   document.querySelectorAll("nav a").forEach(a => {
     if (a.dataset.page === nav) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
+  const trendSec = document.getElementById("trend-section");
+  if (page === "trends") { document.getElementById("trend-slot").appendChild(trendSec); loadTrends(); }
+  else document.getElementById("pred-h").closest("section").after(trendSec);
+  if (page === "reports") loadReports(iso);
   if (page === "country" && iso) { loadCountry(iso.toUpperCase(), CATEGORIES[cat] ? cat : "all"); return; }
-  document.title = `${page === "management" ? "Management" : "Overview"} · WellGTM`;
+  document.title = `${{ management: "Management", trends: "Trends", reports: "Weekly reports" }[page] || "Overview"} · WellGTM`;
 }
 
 /* ---------- overview ---------- */
@@ -342,6 +401,9 @@ function renderTabs() {
 }
 
 function renderTop3(st) {
+  document.getElementById("top3-month").textContent = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  const kcs = st.sources.find(s => s.source === "kcs_monthly");
+  document.getElementById("top3-basis").textContent = `Ranked from annual trade data (latest year ${Math.max(...(st.ranking.all || []).map(r => r.latest_year || 0)) || "—"}) and economic indicators, refreshed automatically${kcs?.last_success ? `; monthly 관세청 exports last updated ${ago(kcs.last_success)}` : ""}.`;
   const top = (st.ranking[category] || []).slice(0, 3);
   const el = document.getElementById("top3");
   if (!top.length) { el.innerHTML = `<div class="card empty">No ranking yet. It appears automatically once trade and economic data have loaded (see Management).</div>`; return; }
@@ -448,38 +510,41 @@ function renderCountry() {
 }
 
 function renderExportsChart() {
-  const el = document.getElementById("c-chart"), data = countryData.monthly;
-  if (!data.length) { el.innerHTML = `<p class="empty">No 관세청 monthly data for this market yet.</p>`; return; }
+  monthlyChart(document.getElementById("c-chart"), countryData.monthly, showTable,
+               `Korean monthly exports to ${countryData.name} by product category`);
+}
+
+/* Monthly line chart, one line per product category: legend, end labels, crosshair tooltip, table view. */
+function monthlyChart(el, data, asTable, label) {
+  if (!data.length) { el.innerHTML = `<p class="empty">No 관세청 monthly data yet.</p>`; return; }
   const periods = [...new Set(data.map(d => d.period))].sort();
   const cats = Object.keys(CAT_COLOR).filter(k => data.some(d => d.category === k));
   const val = (k, p) => (data.find(d => d.category === k && d.period === p) || {}).value_usd || 0;
-  if (showTable) {
+  if (asTable) {
     el.innerHTML = `<div class="scroll"><table><thead><tr><th scope="col">Month</th>${cats.map(k => `<th class="num" scope="col">${esc(CATEGORIES[k])}</th>`).join("")}</tr></thead><tbody>${
       periods.slice().reverse().map(p => `<tr><td>${ym(p)}</td>${cats.map(k => `<td class="num">${money(val(k, p))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
     return;
   }
-  const W = 760, H = 280, L = 64, R = 130, T = 12, B = 28, w = W - L - R, h = H - T - B;
+  const W = 760, H = 280, L = 64, R = 140, T = 12, B = 28, w = W - L - R, h = H - T - B;
   const max = Math.max(...cats.flatMap(k => periods.map(p => val(k, p)))) || 1;
   const step = 10 ** Math.floor(Math.log10(max)), top = Math.ceil(max / step) * step;
   const x = i => L + (periods.length < 2 ? w / 2 : i / (periods.length - 1) * w), y = v => T + h - v / top * h;
   const ticks = [0, .25, .5, .75, 1].map(f => f * top);
   const yearTicks = periods.map((p, i) => [p, i]).filter(([p]) => p.endsWith("01"));
-  const lines = cats.map(k => `<path class="line" style="stroke:${CAT_COLOR[k]}" d="${periods.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(val(k, p)).toFixed(1)}`).join("")}"/>`);
-  // direct labels at the line ends, nudged apart so they never overlap
   const ends = cats.map(k => ({ k, y: y(val(k, periods.at(-1))) })).sort((a, b) => a.y - b.y);
   for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
   el.innerHTML = `<div class="legend" aria-hidden="true">${cats.map(k => `<span style="--c:${CAT_COLOR[k]}">${esc(CATEGORIES[k])}</span>`).join("")}</div>
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Line chart of Korean monthly exports to ${esc(countryData.name)} by product category, ${ym(periods[0])} to ${ym(periods.at(-1))}. Use “Show as table” for the values.">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}, ${ym(periods[0])} to ${ym(periods.at(-1))}. Use “Show as table” for the values.">
       ${ticks.map(t => `<line class="gridline" x1="${L}" x2="${L + w}" y1="${y(t)}" y2="${y(t)}"/><text x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${money(t)}</text>`).join("")}
       <line class="axis" x1="${L}" x2="${L + w}" y1="${T + h}" y2="${T + h}"/>
       ${yearTicks.map(([p, i]) => `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${p.slice(0, 4)}</text>`).join("")}
-      ${lines.join("")}
-      ${ends.map(e => `<text x="${L + w + 8}" y="${e.y + 4}" style="fill:var(--ink-2)">${esc(CATEGORIES[e.k])}</text>`).join("")}
-      <line class="cross" id="cross" y1="${T}" y2="${T + h}" visibility="hidden"/>
-      <rect id="hit" x="${L}" y="${T}" width="${w}" height="${h}" fill="transparent"/>
+      ${cats.map(k => `<path class="line" style="stroke:${CAT_COLOR[k]}" d="${periods.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(val(k, p)).toFixed(1)}`).join("")}"/>`).join("")}
+      ${ends.map(e => `<text x="${L + w + 8}" y="${e.y + 4}">${esc(CATEGORIES[e.k])}</text>`).join("")}
+      <line class="cross" y1="${T}" y2="${T + h}" visibility="hidden"/>
+      <rect class="hit" x="${L}" y="${T}" width="${w}" height="${h}" fill="transparent"/>
     </svg>`;
-  const svg = el.querySelector("svg"), cross = el.querySelector("#cross"), tip = document.getElementById("tip");
-  el.querySelector("#hit").addEventListener("mousemove", ev => {
+  const svg = el.querySelector("svg"), cross = el.querySelector(".cross"), tip = document.getElementById("tip");
+  el.querySelector(".hit").addEventListener("mousemove", ev => {
     const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
     const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
     const i = Math.max(0, Math.min(periods.length - 1, Math.round((loc.x - L) / w * (periods.length - 1))));
@@ -487,19 +552,90 @@ function renderExportsChart() {
     tip.innerHTML = `<b>${ym(periods[i])}</b><dl>${cats.map(k => `<dt>${esc(CATEGORIES[k])}</dt><dd>${money(val(k, periods[i]))}</dd>`).join("")}</dl>`;
     tip.hidden = false; tip.style.left = Math.min(ev.clientX + 14, innerWidth - 310) + "px"; tip.style.top = (ev.clientY + 14) + "px";
   });
-  el.querySelector("#hit").addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+  el.querySelector(".hit").addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+}
+
+/* ---------- weekly reports ---------- */
+async function loadReports(week) {
+  const list = await (await fetch("/api/reports")).json();
+  const el = document.getElementById("rep-list");
+  el.innerHTML = list.length ? list.map(r => `<li><a class="row-link" href="#/reports/${esc(r.week)}" ${r.week === (week || list[0].week) ? 'aria-current="true"' : ""}>${esc(r.title)}</a>
+    <div class="fact">${esc(r.headline)}</div></li>`).join("") : `<li class="empty">No reports yet. The first one is generated on Tuesday, or press “Generate this week's report”.</li>`;
+  const pick = week || list[0]?.week;
+  const view = document.getElementById("rep-view");
+  if (!pick) { view.innerHTML = ""; return; }
+  const r = await (await fetch(`/api/reports/${encodeURIComponent(pick)}`)).json();
+  const usd = v => money(v);
+  view.innerHTML = `<div class="page-head" style="margin:0 0 8px"><h2 style="margin:0">${esc(r.title)}</h2>
+      <a class="linkbtn" href="/api/reports/${esc(r.week)}.md" download>Download Markdown</a></div>
+    <p style="margin:0 0 4px"><b>${esc(r.headline)}</b></p>
+    <p class="fact" style="margin:0">Generated ${esc(new Date(r.generated_at).toLocaleString())}</p>
+    <h3>TOP3</h3><ol style="margin:0;padding-left:20px">${r.top3.map(c => `<li><a class="row-link" href="#/country/${esc(c.iso3)}/all">${esc(c.name)}</a> · score ${c.score.toFixed(1)} · ${badge(CONF[c.confidence])}<div class="fact">${esc(c.headline)}</div></li>`).join("")}</ol>
+    <h3>Rank changes since last week</h3>${r.movers.length ? `<table><thead><tr><th scope="col">Country</th><th class="num" scope="col">Last week</th><th class="num" scope="col">Now</th><th class="num" scope="col">Change</th></tr></thead><tbody>${
+      r.movers.map(m => `<tr><td>${esc(m.name)}</td><td class="num">#${m.was}</td><td class="num">#${m.now}</td><td class="num ${m.change > 0 ? "up" : "down"}">${m.change > 0 ? "+" : ""}${m.change}</td></tr>`).join("")}</tbody></table>`
+      : `<p class="fact">${r.first_report ? "First report: nothing to compare yet." : "No rank changes."}</p>`}
+    <h3>Exports (관세청)</h3>${r.exports ? `<p class="fact" style="margin:0 0 6px">Korea's K-food exports in ${ym(r.exports.period)}: <b>${usd(r.exports.value_usd)}</b> (${pct(r.exports.yoy)} on a year earlier).</p>
+      <table><thead><tr><th scope="col">Category</th><th class="num" scope="col">${ym(r.exports.period)}</th><th class="num" scope="col">vs a year earlier</th></tr></thead><tbody>${
+      Object.values(r.exports.by_category).map(c => `<tr><td>${esc(c.name)}</td><td class="num">${usd(c.value_usd)}</td><td class="num ${dir(c.yoy)}">${pct(c.yoy)}</td></tr>`).join("")}</tbody></table>
+      ${r.exports.fastest_destinations.length ? `<p class="fact">Fastest-growing destinations (12 months, ≥ US$5M): ${r.exports.fastest_destinations.map(d => `${esc(d.name)} ${pct(d.growth)}`).join(", ")}</p>` : ""}` : `<p class="empty">No 관세청 data.</p>`}
+    <h3>Forecast</h3>${r.forecast ? `<p class="fact" style="margin:0">Most likely TOP3 in ${r.forecast.year}: ${r.forecast.top3.map(c => `${esc(c.name)} (${Math.round(c.p_top3 * 100)}%)`).join(", ")}.</p>` : `<p class="empty">No forecast yet.</p>`}
+    <h3>Ingredient prices</h3><p class="fact" style="margin:0">${r.prices.map(p => `${esc(COMMODITY[p.commodity] || p.commodity)} ${p.latest.toFixed(2)} ${esc(p.unit)} (${pct(p.yoy)})`).join(" · ") || "No data."}</p>
+    <h3>Data and pipeline</h3><p class="fact" style="margin:0">${r.health.runs} runs this week, ${r.health.failed} failed · ${r.health.rows_new.toLocaleString()} new rows · ${r.health.rows_revised.toLocaleString()} revised values${
+      r.health.skipped.length ? ` · skipped: ${esc(r.health.skipped.join(", "))}` : ""}</p>
+    ${r.health.fta_rates_missing.length ? `<div class="caveat">FTA preferential rates not yet entered for ${esc(r.health.fta_rates_missing.join(", "))}; applied tariffs show MFN.</div>` : ""}`;
+}
+
+/* ---------- trends page ---------- */
+let trendsData = null, kfoodTable = false;
+const COMMODITY = { cocoa: "Cocoa", sugar_world: "Sugar (world)", wheat_us_hrw: "Wheat (US HRW)", palm_oil: "Palm oil" };
+const pct = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
+const dir = v => v == null ? "" : v >= 0 ? "up" : "down";
+
+async function loadTrends() {
+  trendsData = await (await fetch("/api/trends")).json();
+  renderTrendsPage();
+}
+
+function renderTrendsPage() {
+  const t = trendsData;
+  if (!t) return;
+  const lt = t.kfood_latest, topDest = t.destinations[0];
+  const fastest = t.destinations.filter(d => d.growth != null && d.last12_usd >= 5e6).sort((a, b) => b.growth - a.growth)[0];
+  const cocoa = t.commodities.find(c => c.commodity === "cocoa");
+  document.getElementById("tr-kpis").innerHTML = [
+    ["K-food exports, latest month", lt ? money(lt.value_usd) : "—", lt ? `${ym(lt.period)} · ${pct(lt.yoy)} vs a year earlier` : "no 관세청 data yet"],
+    ["Largest destination (12 months)", topDest ? topDest.name : "—", topDest ? `${money(topDest.last12_usd)} · ${pct(topDest.growth)}` : ""],
+    ["Fastest growing (≥ US$5M a year)", fastest ? fastest.name : "—", fastest ? `${pct(fastest.growth)} over 12 months` : ""],
+    ["Cocoa price", cocoa ? `US$${cocoa.latest.toFixed(2)}/kg` : "—", cocoa ? `${cocoa.latest_month} · ${pct(cocoa.yoy)} vs a year earlier` : ""],
+  ].map(([l, v, n]) => `<div class="card kpi"><div class="label">${l}</div><div class="value">${esc(v)}</div><div class="sub">${esc(n)}</div></div>`).join("");
+  monthlyChart(document.getElementById("tr-exp"), t.kfood_monthly, kfoodTable, "Korea's monthly K-food exports to the world by product category");
+  document.querySelector("[data-toggle-kfood]").textContent = kfoodTable ? "Show chart" : "Show as table";
+  const maxDest = Math.max(...t.destinations.map(d => d.last12_usd), 1);
+  document.getElementById("tr-dest").innerHTML = t.destinations.length ? `<table><caption>Candidate markets ranked by Korean K-food exports over the last 12 months (관세청).</caption>
+    <thead><tr><th scope="col">Country</th><th class="bar-cell" scope="col">Last 12 months</th><th class="num" scope="col">12 months before</th><th class="num" scope="col">Change</th></tr></thead><tbody>${
+    t.destinations.map(d => `<tr class="link" data-href="#/country/${esc(d.iso3)}/all"><td><a class="row-link" href="#/country/${esc(d.iso3)}/all">${esc(d.name)}</a></td>
+      <td><div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(d.last12_usd / maxDest * 100).toFixed(1)}%"></span></div><b>${money(d.last12_usd)}</b></div></td>
+      <td class="num">${money(d.prev12_usd)}</td><td class="num ${dir(d.growth)}">${pct(d.growth)}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="empty">Needs 24 months of 관세청 data.</p>`;
+  document.getElementById("tr-com").innerHTML = t.commodities.map(c => {
+    const ys = c.series.map(p => p.price), lo = Math.min(...ys), hi = Math.max(...ys);
+    const pts = ys.map((v, i) => `${(i / Math.max(1, ys.length - 1) * 200).toFixed(1)},${(52 - (v - lo) / ((hi - lo) || 1) * 48).toFixed(1)}`).join(" ");
+    return `<div class="card kpi spark"><div class="label">${esc(COMMODITY[c.commodity] || c.commodity)}</div>
+      <div class="value">${c.latest.toFixed(c.latest < 10 ? 2 : 0)} <span class="fact">${esc(c.unit)}</span></div>
+      <div class="sub ${dir(c.yoy)}">${pct(c.yoy)} vs a year earlier · ${esc(c.latest_month)}</div>
+      <svg viewBox="0 0 200 56" preserveAspectRatio="none" role="img" aria-label="${esc(COMMODITY[c.commodity] || c.commodity)} price over the last ${ys.length} months, from ${lo.toFixed(2)} to ${hi.toFixed(2)} ${esc(c.unit)}"><polyline class="line" points="${pts}" fill="none" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>`;
+  }).join("");
 }
 
 /* ---------- trend + forecast ---------- */
 let trendHl = null, trendTable = false, predYear = null;
-const TOP_COLORS = ["var(--c1)", "var(--c2)", "var(--c3)"];
 
 function trendData(st) {
   const t = st.trend;
   if (!t || !t.history?.length) return null;
   const lastYear = Math.max(...t.history.map(r => r.year));
   const top10 = t.history.filter(r => r.year === lastYear).sort((a, b) => a.rank - b.rank).slice(0, 10);
-  const color = Object.fromEntries(top10.map((r, i) => [r.iso3, i < 3 ? TOP_COLORS[i] : "var(--muted-line)"]));
+  const color = Object.fromEntries(top10.map((r, i) => [r.iso3, `var(--s${i + 1})`]));
   const years = [...new Set([...t.history, ...t.forecast].map(r => r.year))].sort();
   const get = (iso, y) => (y <= lastYear ? t.history : t.forecast).find(r => r.iso3 === iso && r.year === y);
   return { t, lastYear, top10, color, years, get };
@@ -536,7 +672,7 @@ function renderTrend(st, force = false) {
     const f = future.slice(1).map(y => d.get(trendHl, y)).filter(Boolean), a = d.get(trendHl, d.lastYear);
     if (!f.length || !a) return "";
     const top = [a, ...f].map(p => `${x(p.year)},${yv(p.high ?? p.score)}`), bot = [a, ...f].reverse().map(p => `${x(p.year)},${yv(p.low ?? p.score)}`);
-    return `<polygon class="band" points="${[...top, ...bot].join(" ")}" style="fill:${d.color[trendHl] === "var(--muted-line)" ? "var(--ink)" : d.color[trendHl]}"/>`;
+    return `<polygon class="band" points="${[...top, ...bot].join(" ")}" style="fill:${d.color[trendHl]}"/>`;
   })() : "";
   const ends = d.top10.map(r => ({ r, y: yv(d.get(r.iso3, d.years.at(-1))?.score ?? r.score) })).sort((a, b) => a.y - b.y);
   for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
@@ -609,6 +745,8 @@ function renderKpis(st) {
 }
 
 function renderSources(st) {
+  const all = document.getElementById("run-all"), busy = st.running.length;
+  all.disabled = busy > 0; all.textContent = busy ? `Running ${busy} source${busy > 1 ? "s" : ""}…` : "Run all sources";
   document.getElementById("sources").innerHTML = st.sources.map(s => {
     const running = st.running.includes(s.source);
     return `<div class="card src-card">
@@ -616,7 +754,7 @@ function renderSources(st) {
       <div class="src-desc">${esc(SOURCE_INFO[s.source] || "")}</div>
       <dl><dt>Last success</dt><dd>${esc(ago(s.last_success))}</dd><dt>Next scheduled</dt><dd>${esc(s.next_run ? ago(s.next_run) : "—")}</dd></dl>
       ${s.message && s.status !== "success" ? `<div class="msg">${esc(s.message)}</div>` : ""}
-      <button class="primary" data-run="${esc(s.source)}" ${running ? "disabled" : ""}>${running ? "Running…" : `Run ${esc(s.source)} now`}</button>
+      <button class="primary" data-run="${esc(s.source)}" ${running ? "disabled" : ""}>${running ? "Running…" : `Run ${esc(s.source)}`}</button>
     </div>`;
   }).join("");
 }
@@ -672,10 +810,22 @@ async function refresh() {
 }
 
 document.addEventListener("click", async e => {
+  if (e.target.closest("[data-make-report]")) {
+    const btn = e.target.closest("[data-make-report]"); btn.disabled = true; btn.textContent = "Generating…";
+    const made = await (await fetch("/api/report", { method: "POST" })).json();
+    btn.disabled = false; btn.textContent = "Generate this week's report";
+    location.hash = `#/reports/${made.week || ""}`; loadReports(made.week); return;
+  }
+  if (e.target.closest("[data-run-all]")) {
+    const btn = e.target.closest("[data-run-all]"); btn.disabled = true; btn.textContent = "Starting…";
+    for (const s of (last?.sources || [])) await fetch(`/api/run?source=${encodeURIComponent(s.source)}`, { method: "POST" });
+    refresh(); return;
+  }
   const run = e.target.closest("[data-run]");
   if (run) { run.disabled = true; run.textContent = "Starting…"; await fetch(`/api/run?source=${encodeURIComponent(run.dataset.run)}`, { method: "POST" }); refresh(); }
   const hl = e.target.closest("[data-hl]");
   if (hl) { trendHl = trendHl === hl.dataset.hl ? null : hl.dataset.hl; if (last) renderTrend(last); return; }
+  if (e.target.closest("[data-toggle-kfood]")) { kfoodTable = !kfoodTable; renderTrendsPage(); return; }
   if (e.target.closest("[data-toggle-trend]")) { trendTable = !trendTable; if (last) renderTrend(last); return; }
   const py = e.target.closest("[data-pred]");
   if (py) { predYear = +py.dataset.pred; if (last) renderPredicted(last); return; }

@@ -1,0 +1,25 @@
+name: Weekly report
+# 05:00 KST every Tuesday, two hours after the weekly data refresh. Also runnable from the Actions tab.
+on:
+  schedule:
+    - cron: "0 20 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: report-weekly
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv pip install -e ".[postgres]"
+      - name: Generate this week's report
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m pipeline.run --report

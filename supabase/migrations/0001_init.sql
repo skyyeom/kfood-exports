@@ -87,6 +87,16 @@ CREATE TABLE IF NOT EXISTS ranking_snapshots (
 	PRIMARY KEY (id)
 );
 
+CREATE TABLE IF NOT EXISTS reports (
+	week TEXT NOT NULL, 
+	generated_at TEXT NOT NULL, 
+	title TEXT NOT NULL, 
+	headline TEXT NOT NULL, 
+	payload JSON NOT NULL, 
+	markdown TEXT NOT NULL, 
+	PRIMARY KEY (week)
+);
+
 CREATE TABLE IF NOT EXISTS tariffs (
 	source TEXT NOT NULL, 
 	importer_iso3 TEXT NOT NULL, 
@@ -140,6 +150,9 @@ create policy "public read" on ingest_runs for select to anon, authenticated usi
 alter table ranking_snapshots enable row level security;
 drop policy if exists "public read" on ranking_snapshots;
 create policy "public read" on ranking_snapshots for select to anon, authenticated using (true);
+alter table reports enable row level security;
+drop policy if exists "public read" on reports;
+create policy "public read" on reports for select to anon, authenticated using (true);
 alter table tariffs enable row level security;
 drop policy if exists "public read" on tariffs;
 create policy "public read" on tariffs for select to anon, authenticated using (true);

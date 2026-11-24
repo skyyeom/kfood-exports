@@ -23,6 +23,8 @@ from pipeline.config import CANDIDATES, FTA_WITH_KOREA, HS
 from pipeline.db import Store
 from pipeline.http import Http
 from pipeline.indicators import CATEGORIES
+from pipeline.insights import records as _records
+from pipeline.insights import trends_state
 from pipeline.raw import LocalRawStore
 from pipeline.run import run_sources
 from pipeline.sources import SOURCES
@@ -51,10 +53,6 @@ def next_run(source: str, now: datetime | None = None) -> str | None:
     while (weekday is not None and t.weekday() != weekday) or (day is not None and t.day != day):
         t += timedelta(days=1)
     return t.isoformat()
-
-
-def _records(df: pd.DataFrame) -> list[dict]:
-    return json.loads(df.to_json(orient="records"))
 
 
 def state(store: Store) -> dict:
@@ -192,6 +190,23 @@ class _Handler(BaseHTTPRequestHandler):
             except KeyError:
                 return self._send(404, b'{"error": "unknown country"}')
             self._send(200, json.dumps(body, default=str).encode())
+        elif path == "/api/reports":
+            self._send(200, json.dumps(self.store.list_reports()).encode())
+        elif path.startswith("/api/reports/"):
+            week = path.rsplit("/", 1)[-1]
+            as_md = week.endswith(".md")
+            body = self.store.get_report(week.removesuffix(".md"), markdown=as_md)
+            if body is None:
+                return self._send(404, b'{"error": "no such report"}')
+            if as_md:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="wellgtm-report-{week}"')
+                self.end_headers()
+                return self.wfile.write(body.encode())
+            self._send(200, json.dumps(body, default=str).encode())
+        elif path == "/api/trends":
+            self._send(200, json.dumps(trends_state(self.store), default=str).encode())
         elif path == "/api/state":
             self._send(200, json.dumps(state(self.store) | {"running": sorted(self.running)}, default=str).encode())
         else:
@@ -199,6 +214,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urlparse(self.path)
+        if url.path == "/api/report":
+            return self._send(201, json.dumps(self._report(), default=str).encode())
         source = (parse_qs(url.query).get("source") or [""])[0]
         if url.path != "/api/run" or source not in SOURCES:
             return self._send(400, b'{"error": "unknown source"}')
@@ -208,6 +225,13 @@ class _Handler(BaseHTTPRequestHandler):
             self.running.add(source)
         threading.Thread(target=self._run, args=(source,), daemon=True).start()
         self._send(202, json.dumps({"started": source}).encode())
+
+    def _report(self) -> dict:
+        from pipeline.run import _weekly_report
+
+        _weekly_report(self.store, "manual", None)
+        latest = self.store.list_reports()
+        return latest[0] if latest else {}
 
     def _run(self, source: str) -> None:
         try:

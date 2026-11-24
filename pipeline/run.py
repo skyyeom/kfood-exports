@@ -129,6 +129,26 @@ def run_sources(
     return results
 
 
+def _weekly_report(store: Store, trigger: str, ci_run_url: str | None) -> int:
+    from pipeline.reports import build_report
+
+    run_id = store.start_run("report", trigger, ci_run_url)
+    store.log_event(run_id, "start")
+    try:
+        report = build_report(store)
+        store.save_report(report)
+    except Exception as e:  # noqa: BLE001 — logged for the Automation page, then reported via the exit code
+        store.log_event(run_id, "report", "error", message=f"{type(e).__name__}: {e}")
+        store.log_event(run_id, "finish", "error")
+        store.finish_run(run_id, "failed", error=f"{type(e).__name__}: {e}")
+        return 1
+    store.log_event(run_id, "report", message=report["headline"], metrics={"week": report["week"]})
+    store.log_event(run_id, "finish")
+    store.finish_run(run_id, "success")
+    print(f"report       success  {report['week']}: {report['headline']}")
+    return 0
+
+
 def _forced_rerank(store: Store, trigger: str, ci_run_url: str | None) -> int:
     run_id = store.start_run("rerank", trigger, ci_run_url)
     store.log_event(run_id, "start")
@@ -168,12 +188,13 @@ def main(argv: list[str] | None = None, env=None, http: Any = None) -> int:
     parser.add_argument("--source", action="append", choices=sorted(SOURCES), help="repeatable")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--rerank", action="store_true", help="recompute rankings now (e.g. after a scoring change)")
+    parser.add_argument("--report", action="store_true", help="generate and store this week's report")
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:  # argparse exits 2 on bad arguments
         return int(e.code or 0)
     names = sorted(SOURCES) if args.all else args.source
-    if not names and not args.rerank:
+    if not names and not args.rerank and not args.report:
         parser.print_usage()
         return 2
     url = env.get("DATABASE_URL", "sqlite:///data/local.db")
@@ -188,6 +209,8 @@ def main(argv: list[str] | None = None, env=None, http: Any = None) -> int:
     trigger, ci_run_url = _trigger(env)
     if args.rerank:
         return _forced_rerank(store, trigger, ci_run_url)
+    if args.report:
+        return _weekly_report(store, trigger, ci_run_url)
     results = run_sources([SOURCES[n]() for n in names], store, http or Http(), trigger, _raw_store(env), ci_run_url)
     for r in results:
         print(f"{r.source:12} {r.status:8} +{r.inserted} ~{r.updated} ={r.unchanged}  run {r.run_id}")
