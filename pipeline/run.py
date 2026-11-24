@@ -43,19 +43,20 @@ def run_sources(
     for source in sources:
         run_id = store.start_run(source.name, trigger)
         store.log_event(run_id, "start")
-        step, fetched, invalid = "fetch", None, None
+        step, fetched, invalid, raw = "fetch", None, None, None
         try:
             recorder = RecordingHttp(http)
-            df = source.fetch(recorder)
+            try:
+                df = source.fetch(recorder)
+            finally:  # keep what upstream sent even when the fetch fails partway
+                if raw_store and recorder.responses:
+                    raw = raw_store.put(f"raw/{source.name}/{run_id}.zip", recorder.archive())
             fetched = len(df)
-            raw = (
-                raw_store.put(f"raw/{source.name}/{run_id}.zip", recorder.archive())
-                if raw_store and recorder.responses
-                else None
-            )
             store.log_event(run_id, "fetch", metrics={"rows": fetched, "raw": raw} if raw else {"rows": fetched})
             step = "validate"
             df, invalid, examples = validate(source.table, df)
+            if fetched and invalid / fetched > MAX_INVALID_SHARE:
+                raise ValueError(f"{invalid} of {fetched} rows failed validation: {'; '.join(examples)}")
             store.log_event(
                 run_id,
                 "validate",
@@ -63,8 +64,6 @@ def run_sources(
                 message="; ".join(examples) or None,
                 metrics={"invalid": invalid},
             )
-            if fetched and invalid / fetched > MAX_INVALID_SHARE:
-                raise ValueError(f"{invalid} of {fetched} rows failed validation: {'; '.join(examples)}")
             step = "upsert"
             changes = store.upsert(source.table, df, run_id)
             store.log_event(run_id, "upsert", metrics=asdict(changes))
@@ -76,7 +75,9 @@ def run_sources(
             continue
         except Exception as e:  # noqa: BLE001 — one failing source must not stop the others
             error = f"{type(e).__name__}: {e}"
-            store.log_event(run_id, step, "error", message=error)
+            store.log_event(
+                run_id, step, "error", message=error, metrics={"raw": raw} if raw and step == "fetch" else None
+            )
             store.log_event(run_id, "finish", "error")
             store.finish_run(run_id, "failed", error=error, rows_fetched=fetched, rows_invalid=invalid)
             results.append(RunResult(source.name, run_id, "failed"))

@@ -130,11 +130,29 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return df.astype(object).where(df.notna(), None).to_dict(orient="records")
 
 
+_TRUE, _FALSE = {"true", "1", "yes"}, {"false", "0", "no"}
+
+
+def cast_value(value, to: type):
+    """Cast to a column's Python type. A value that can't be cast is returned unchanged so validation rejects it."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    if to is bool:
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        return True if text in _TRUE else False if text in _FALSE else value
+    try:
+        return to(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def _coerce_rows(t: sa.Table, df: pd.DataFrame) -> list[dict]:
     """Rows restricted to the table's columns, each value cast to its column's Python type."""
     cols = [c for c in df.columns if c in t.c]
     types = {c: t.c[c].type.python_type for c in cols}
-    return [{c: None if v is None else types[c](v) for c, v in row.items()} for row in _records(df[cols])]
+    return [{c: cast_value(v, types[c]) for c, v in row.items()} for row in _records(df[cols])]
 
 
 def _values_equal(a, b) -> bool:

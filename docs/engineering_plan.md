@@ -89,7 +89,7 @@ Terms: link and summarise KOTRA/aT material (R11). The FX feed requires attribut
 Each `python -m pipeline.run --source X` executes these steps. Each step writes an `ingest_events` row, so the dashboard shows progress live.
 
 1. **start**: insert an `ingest_runs` row (`status=running`, `trigger=schedule|manual|ci`, GitHub run URL).
-2. **fetch**: call the source adapter → DataFrame. Upload the raw payload to Supabase Storage at `raw/{source}/{run_id}`.
+2. **fetch**: call the source adapter → DataFrame. Every upstream response is archived to Supabase Storage at `raw/{source}/{run_id}.zip` (a manifest plus the response bodies; request headers are never stored), including when the fetch fails partway.
 3. **validate**: pandera schema for the target table. Failing rows are counted and dropped; if more than 20% fail, the run fails.
 4. **upsert**: compare against existing rows by natural key → insert new rows, update changed rows, and write one `data_revisions` row per changed field. Unchanged rows are left alone, so re-runs are idempotent.
 5. **rerank**: if any data changed, recompute pillars, scores and P(TOP3) for each category × preset and insert a `ranking_snapshots` row.

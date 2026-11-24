@@ -23,7 +23,10 @@ class WdiSource:
         rows = []
         for code, indicator in self.indicators.items():
             url = URL.format(countries=";".join(self.countries), code=code)
-            meta, data = json.loads(http.get(url, params={"format": "json", "date": self.years, "per_page": 20000}))
+            body = json.loads(http.get(url, params={"format": "json", "date": self.years, "per_page": 20000}))
+            if len(body) != 2:
+                raise RuntimeError(f"WDI {code}: {body[0].get('message', body) if body else 'empty response'}")
+            meta, data = body
             if meta["pages"] > 1:
                 raise RuntimeError(f"WDI {code}: more than one page; raise per_page")
             rows += [

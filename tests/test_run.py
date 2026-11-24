@@ -233,7 +233,69 @@ def test_raw_upstream_responses_are_archived_per_run(store, tmp_path):
 
     [result] = run_sources([FxSource()], store, http=http, raw_store=raw)
 
-    with zipfile.ZipFile(tmp_path / "raw" / "fx" / f"{result.run_id}.zip") as z:
+    raw = store.events(result.run_id).set_index("step").loc["fetch", "metrics"]["raw"]
+    assert raw.endswith(f"raw/fx/{result.run_id}.zip")
+    with zipfile.ZipFile(raw) as z:
         manifest = json.loads(z.read("manifest.json"))
         assert manifest[0]["url"] == "https://open.er-api.com/v6/latest/USD"
         assert z.read(manifest[0]["file"]) == (FIXTURES / "fx_open_er_api.json").read_bytes()
+
+
+def test_one_unparseable_key_rejects_that_row_only(store):
+    rows = [indicator_row(year=y) for y in (2020, 2021, 2022, 2023)] + [indicator_row(year="abc")]
+
+    [result] = run_sources([StaticSource("wdi", "country_indicators", rows)], store, http=None)
+
+    assert (result.status, result.inserted) == ("success", 4)
+    assert store.runs().rows_invalid.iloc[0] == 1
+
+
+def test_wrongly_typed_value_rejects_that_row_only(store):
+    rows = [indicator_row(year=y) for y in (2020, 2021, 2022, 2023)] + [indicator_row(year=2024, value="n/a")]
+
+    [result] = run_sources([StaticSource("wdi", "country_indicators", rows)], store, http=None)
+
+    assert (result.status, result.inserted) == ("success", 4)
+
+
+def test_payload_without_a_required_value_column_fails_the_run(store):
+    rows = [{k: v for k, v in r.items() if k != "rate"} for r in fx_rows()]
+
+    [result] = run_sources([StaticSource("fx", "fx_rates", rows)], store, http=None)
+
+    assert result.status == "failed"
+
+
+def test_boolean_strings_are_read_as_booleans(store):
+    run_sources([StaticSource("wdi", "country_indicators", [indicator_row(imputed="False")])], store, http=None)
+
+    assert not store.read("country_indicators").imputed.iloc[0]
+
+
+def test_run_over_the_invalid_limit_logs_validation_once_as_an_error(store):
+    rows = fx_rows() + [{"source": "fx", "date": "not-a-date", "base": "USD", "quote": "PHP", "rate": 58.1}]
+
+    [result] = run_sources([StaticSource("fx", "fx_rates", rows)], store, http=None)
+
+    validate = store.events(result.run_id).query("step == 'validate'")
+    assert validate.status.tolist() == ["error"]
+
+
+class PartlyFailingSource:
+    """Fetches one page from upstream, then hits an error on the next."""
+
+    name, table = "fx", "fx_rates"
+
+    def fetch(self, http):
+        http.get("https://open.er-api.com/v6/latest/USD")
+        raise RuntimeError("second page failed")
+
+
+def test_raw_responses_are_archived_even_when_the_fetch_fails_partway(store, tmp_path):
+    http = RecordedHttp(("https://open.er-api.com/v6/latest/USD", {}, "fx_open_er_api.json"))
+
+    [result] = run_sources([PartlyFailingSource()], store, http=http, raw_store=LocalRawStore(tmp_path))
+
+    raw = store.events(result.run_id).set_index("step").loc["fetch", "metrics"]["raw"]
+    with zipfile.ZipFile(raw) as z:
+        assert json.loads(z.read("manifest.json"))[0]["url"] == "https://open.er-api.com/v6/latest/USD"

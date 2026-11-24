@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pandera.pandas as pa
 
-from pipeline.db import DATA_TABLES
+from pipeline.db import DATA_TABLES, cast_value
 
 ISO3 = pa.Check.str_matches(r"^[A-Z]{3}$")
 ISO_DATE = pa.Check.str_matches(r"^\d{4}-\d{2}-\d{2}$")
@@ -17,7 +17,8 @@ def _key(*checks: pa.Check) -> pa.Column:
 
 
 def _value(*checks: pa.Check, nullable: bool = True) -> pa.Column:
-    return pa.Column(None, checks=list(checks), nullable=nullable, required=False)
+    """A value column; a non-nullable value is also required in every payload."""
+    return pa.Column(None, checks=list(checks), nullable=nullable, required=not nullable)
 
 
 NON_NEGATIVE = pa.Check.ge(0)
@@ -78,22 +79,22 @@ SCHEMAS = {
 }
 
 
-def _cast(value, to: type):
-    """Cast to the column's Python type; leave the value as is when it can't be cast, so a check rejects the row."""
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    try:
-        return to(value)
-    except (TypeError, ValueError):
-        return value
-
-
 def coerce(table: str, df: pd.DataFrame) -> pd.DataFrame:
     t = DATA_TABLES[table]
     return pd.DataFrame(
-        {c: [_cast(v, t.c[c].type.python_type) for v in df[c]] if c in t.c else df[c] for c in df.columns},
+        {c: [cast_value(v, t.c[c].type.python_type) for v in df[c]] if c in t.c else df[c] for c in df.columns},
         index=df.index,
     )
+
+
+def _mistyped(table: str, df: pd.DataFrame) -> pd.Series:
+    """Rows holding a value that could not be cast to its column's type."""
+    t = DATA_TABLES[table]
+    bad = pd.Series(False, index=df.index)
+    for c in (c for c in df.columns if c in t.c):
+        to = t.c[c].type.python_type
+        bad |= df[c].map(lambda v, to=to: v is not None and not pd.isna(v) and not isinstance(v, to))
+    return bad
 
 
 def validate(table: str, df: pd.DataFrame) -> tuple[pd.DataFrame, int, list[str]]:
@@ -104,14 +105,20 @@ def validate(table: str, df: pd.DataFrame) -> tuple[pd.DataFrame, int, list[str]
     if df.empty:
         return df, 0, []
     df = coerce(table, df)
+    mistyped = _mistyped(table, df)
+    examples = [f"row {i}: value of the wrong type" for i in df.index[mistyped][:5]]
+    typed = df[~mistyped]
     try:
-        SCHEMAS[table].validate(df, lazy=True)
-        return df, 0, []
+        SCHEMAS[table].validate(typed, lazy=True)
+        bad = set()
     except pa.errors.SchemaErrors as e:
         cases = e.failure_cases
         if cases["index"].isna().any():
             whole = cases[cases["index"].isna()]
             raise ValueError(f"{table} payload rejected: {whole[['column', 'check']].to_dict(orient='records')}") from e
-        bad = sorted(set(cases["index"].astype(int)))
-        examples = [f"row {r.index}: {r.column} {r.check} (got {r.failure_case!r})" for r in cases.head(5).itertuples()]
-        return df.drop(index=bad), len(bad), examples
+        bad = set(cases["index"])
+        examples += [
+            f"row {r.index}: {r.column} {r.check} (got {r.failure_case!r})" for r in cases.head(5).itertuples()
+        ]
+    invalid = int(mistyped.sum()) + len(bad)
+    return typed.drop(index=list(bad)), invalid, examples[:5]

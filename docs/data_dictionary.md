@@ -51,6 +51,8 @@ The tables are defined in `pipeline/db.py`. The SQL in `supabase/migrations/` is
 
 **Applied rate** = min(MFN, eligible preferential rate) + the sum of additional duties in force (for example, the US 15% reciprocal tariff on top of KORUS 0%).
 
+WITS MFN rows are per HS6 line; overrides may be given at HS4, in which case they apply to every HS6 line that starts with that heading.
+
 ### `fx_rates`
 | Column | Type | Key | Notes |
 |---|---|---|---|
@@ -89,7 +91,7 @@ The tables are defined in `pipeline/db.py`. The SQL in `supabase/migrations/` is
 | ci_run_url | text | Link to the GitHub Actions run |
 
 ### `ingest_events`
-`id` (autoincrement), `run_id`, `ts`, `step` (`start`, `fetch`, `validate`, `upsert`, `rerank`, `finish`), `status` (`ok`, `error`, `skipped`), `message`, `metrics` (JSON).
+`id` (autoincrement), `run_id`, `ts`, `step` (`start`, `fetch`, `validate`, `upsert`, `rerank`, `finish`), `status` (`ok`, `warning` (some rows rejected by validation), `error`, `skipped`), `message`, `metrics` (JSON).
 
 ### `data_revisions`
 `id`, `run_id`, `table_name`, `row_key` (JSON of the natural key), `field`, `old_value`, `new_value`, `detected_at`. One row per changed field.

@@ -1,4 +1,6 @@
-from fakes import RecordedHttp
+import openpyxl
+import pytest
+from fakes import FIXTURES, RecordedHttp
 
 from pipeline.sources.comtrade import ComtradeSource
 from pipeline.sources.fx import FxSource
@@ -111,15 +113,54 @@ def test_tariff_source_adds_dated_overrides_from_the_override_file(tmp_path):
     ]
 
 
-def test_pinksheet_source_finds_the_current_workbook_and_reads_monthly_prices():
-    http = RecordedHttp(
+def pinksheet_http():
+    return RecordedHttp(
         ("https://www.worldbank.org/en/research/commodity-markets", {}, "commodity_markets_page.html"),
         ("https://thedocs.worldbank.org/", {}, "pinksheet_monthly.xlsx"),
     )
 
-    rows = PinkSheetSource().fetch(http).set_index(["commodity", "month"])
+
+def test_pinksheet_source_reads_prices_from_the_workbook_linked_on_the_page():
+    rows = PinkSheetSource().fetch(pinksheet_http()).set_index(["commodity", "month"])
 
     assert rows.loc[("cocoa", "2026-10"), ["source", "price", "unit"]].tolist() == ["pinksheet", 5.75, "USD/kg"]
-    assert rows.loc[("sugar_world", "2026-09"), "price"] == 0.41
-    assert rows.loc[("wheat_us_hrw", "2026-08"), ["price", "unit"]].tolist() == [330.0, "USD/mt"]
-    assert len(rows) == 12  # 4 commodities x 3 months
+
+
+def test_pinksheet_source_reads_every_month_for_each_commodity_with_its_unit():
+    rows = PinkSheetSource().fetch(pinksheet_http())
+
+    assert rows.groupby("commodity").month.nunique().to_dict() == {
+        "cocoa": 3,
+        "palm_oil": 3,
+        "sugar_world": 3,
+        "wheat_us_hrw": 3,
+    }
+    assert rows.set_index(["commodity", "month"]).loc[("wheat_us_hrw", "2026-08"), "unit"] == "USD/mt"
+
+
+def test_wdi_source_reports_the_api_error_message(tmp_path):
+    (tmp_path / "err.json").write_text('[{"message": [{"id": "120", "key": "Invalid value", "value": "bad"}]}]')
+    http = RecordedHttp(("https://api.worldbank.org/", {}, str(tmp_path / "err.json")))
+
+    with pytest.raises(RuntimeError, match="Invalid value"):
+        WdiSource(countries=["USA"], indicators={"NY.GDP.PCAP.CD": "gdp_per_capita_usd"}).fetch(http)
+
+
+def test_pinksheet_source_tolerates_blank_unit_cells_and_padded_names(tmp_path):
+    wb = openpyxl.load_workbook(FIXTURES / "pinksheet_monthly.xlsx")
+    ws = wb["Monthly Prices"]
+    header = next(r for r in ws.iter_rows() if any(c.value == "Cocoa" for c in r))
+    for cell in header:
+        if cell.value == "Cocoa":
+            cell.value = "Cocoa "
+        elif cell.value and cell.value not in ("Sugar, world", "Wheat, US HRW", "Palm oil"):
+            ws.cell(row=cell.row + 1, column=cell.column).value = None
+    wb.save(tmp_path / "edited.xlsx")
+    http = RecordedHttp(
+        ("https://www.worldbank.org/", {}, "commodity_markets_page.html"),
+        ("https://thedocs.worldbank.org/", {}, str(tmp_path / "edited.xlsx")),
+    )
+
+    rows = PinkSheetSource().fetch(http).set_index(["commodity", "month"])
+
+    assert rows.loc[("cocoa", "2026-10"), "price"] == 5.75

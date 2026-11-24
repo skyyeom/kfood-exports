@@ -22,13 +22,10 @@ class PinkSheetSource:
             raise RuntimeError(f"No monthly Pink Sheet workbook link found on {PAGE}")
         ws = openpyxl.load_workbook(io.BytesIO(http.get(link.group().decode())), read_only=True, data_only=True)[SHEET]
         rows = list(ws.iter_rows(values_only=True))
-        header = next(i for i, r in enumerate(rows) if "Cocoa" in r)
-        names, units = rows[header], rows[header + 1]
-        cols = {
-            COMMODITIES[n]: (j, units[j].strip("()").replace("$", "USD"))
-            for j, n in enumerate(names)
-            if n in COMMODITIES
-        }
+        header = next(i for i, r in enumerate(rows) if any(isinstance(c, str) and c.strip() == "Cocoa" for c in r))
+        names = [n.strip() if isinstance(n, str) else n for n in rows[header]]
+        units = [str(u or "").strip().strip("()").replace("$", "USD") or None for u in rows[header + 1]]
+        cols = {COMMODITIES[n]: (j, units[j]) for j, n in enumerate(names) if n in COMMODITIES}
         if len(cols) < len(COMMODITIES):
             raise RuntimeError(f"Pink Sheet columns missing: {set(COMMODITIES.values()) - set(cols)}")
         out = []
