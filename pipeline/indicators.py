@@ -29,9 +29,9 @@ def loglinear_growth(values: pd.Series) -> float:
     return float(np.exp(slope) - 1)
 
 
-def build_features(trade: pd.DataFrame, indicators: pd.DataFrame) -> pd.DataFrame:
-    """One row per candidate country with every indicator the screen uses."""
-    t = trade[trade.freq == "A"].assign(year=lambda d: d.period.astype(int))
+def build_features(trade: pd.DataFrame, indicators: pd.DataFrame, hs: list[str] = HS) -> pd.DataFrame:
+    """One row per candidate country with every indicator the screen uses, for the given HS category codes."""
+    t = trade[(trade.freq == "A") & trade.hs.isin(hs)].assign(year=lambda d: d.period.astype(int))
     imports = t[(t.flow == "M") & (t.partner_iso3 == "WLD")]
     from_kr = t[(t.flow == "M") & (t.partner_iso3 == "KOR")]
     kr = t[(t.flow == "X") & (t.reporter_iso3 == "KOR")]
@@ -46,7 +46,7 @@ def build_features(trade: pd.DataFrame, indicators: pd.DataFrame) -> pd.DataFram
     # Destination market size and growth, at each country's latest year with all four HS codes reported
     wld = imports.groupby(["reporter_iso3", "year"]).value_usd.sum().unstack()
     kor = from_kr.groupby(["reporter_iso3", "year"]).value_usd.sum().unstack()
-    complete = imports.groupby(["reporter_iso3", "year"]).hs.nunique().unstack().eq(len(HS))
+    complete = imports.groupby(["reporter_iso3", "year"]).hs.nunique().unstack().eq(len(hs))
     vol = imports.groupby(["reporter_iso3", "year"]).agg(
         v=("value_usd", "sum"), kg=("net_kg", "sum"), n=("net_kg", "count")
     )
@@ -64,7 +64,7 @@ def build_features(trade: pd.DataFrame, indicators: pd.DataFrame) -> pd.DataFram
             "imports_from_kr_musd": kor.loc[iso].get(ly, np.nan) / 1e6 if iso in kor.index else np.nan,
         }
         a, b = vol.loc[(iso, ly - 5)] if (iso, ly - 5) in vol.index else None, vol.loc[(iso, ly)]
-        if a is not None and a.n >= len(HS) and b.n >= len(HS):
+        if a is not None and a.n >= len(hs) and b.n >= len(hs):
             row["volume_cagr_5y"] = cagr(a.kg, b.kg, 5)
         mkt.append(row)
     mkt = pd.DataFrame(mkt).set_index("iso3")
@@ -151,3 +151,19 @@ def screen(
     p["top3_prob_random_weights"] = top3_share(p, rng.dirichlet(np.ones(len(weights)), size=draws))
     p["hub"] = f.hub.reindex(p.index)
     return p.sort_values("score", ascending=False)
+
+
+CATEGORIES = {"all": HS, **{code: [code] for code in HS}}
+
+
+def rankings(trade: pd.DataFrame, indicators: pd.DataFrame) -> dict[str, list[dict]]:
+    """Default-weight corrected ranking per category, as JSON-ready rows ordered by rank."""
+    out = {}
+    for category, codes in CATEGORIES.items():
+        ranked = screen(build_features(trade, indicators, hs=codes))
+        rows = ranked.reset_index(names="iso3").assign(rank=lambda d: range(1, len(d) + 1))
+        out[category] = [
+            {k: (None if isinstance(v, float) and np.isnan(v) else v) for k, v in r.items()}
+            for r in rows.astype(object).to_dict(orient="records")
+        ]
+    return out

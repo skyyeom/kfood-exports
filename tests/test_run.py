@@ -4,6 +4,7 @@ import zipfile
 
 import pandas as pd
 import pytest
+from analysis_data import load_tables
 from fakes import FIXTURES, RecordedHttp
 
 from pipeline.db import Store, metadata
@@ -299,3 +300,38 @@ def test_raw_responses_are_archived_even_when_the_fetch_fails_partway(store, tmp
     raw = store.events(result.run_id).set_index("step").loc["fetch", "metrics"]["raw"]
     with zipfile.ZipFile(raw) as z:
         assert json.loads(z.read("manifest.json"))[0]["url"] == "https://open.er-api.com/v6/latest/USD"
+
+
+def scoring_sources():
+    trade, indicators = load_tables()
+    return [StaticSource("comtrade", "trade_flows", trade), StaticSource("wdi", "country_indicators", indicators)]
+
+
+def test_new_trade_and_macro_data_produce_a_ranking_with_the_expected_top3(store):
+    run_sources(scoring_sources(), store, http=None)
+
+    ranking = store.latest_ranking(category="all")
+    assert [c["iso3"] for c in ranking[:3]] == ["USA", "CHN", "PHL"]  # docs/pm/03_data_analysis.md §3
+
+
+def test_rankings_are_stored_for_every_category(store):
+    run_sources(scoring_sources(), store, http=None)
+
+    for category in ("1704", "1806", "1905", "2105"):
+        assert len(store.latest_ranking(category=category)) >= 3, category
+
+
+def test_unchanged_data_does_not_rerank(store):
+    run_sources(scoring_sources(), store, http=None)
+
+    [_, wdi] = run_sources(scoring_sources(), store, http=None)
+
+    assert store.events(wdi.run_id).set_index("step").loc["rerank", "status"] == "skipped"
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["postgresql://u:p@db.example.supabase.co:5432/postgres", "postgres://u:p@db.example.supabase.co:5432/postgres"],
+)
+def test_supabase_connection_strings_use_the_installed_psycopg_driver(url):
+    assert Store(url).engine.url.drivername == "postgresql+psycopg"

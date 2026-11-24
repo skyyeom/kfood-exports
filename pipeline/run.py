@@ -1,18 +1,32 @@
-"""Run ingestion sources: fetch → upsert, with a run log per source."""
+"""Run ingestion sources: fetch → validate → upsert → re-rank, with a run and step log per source.
+
+    python -m pipeline.run --source fx [--source wdi ...] | --all
+
+Environment: DATABASE_URL (default sqlite:///data/local.db); SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY to archive
+raw responses in Supabase Storage (otherwise under ./data/raw); GITHUB_* variables set by Actions.
+"""
 
 from __future__ import annotations
 
+import argparse
+import os
+import sys
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 import pandas as pd
 
 from pipeline.db import Store, UpsertResult
-from pipeline.raw import RecordingHttp
+from pipeline.http import Http
+from pipeline.indicators import rankings
+from pipeline.raw import LocalRawStore, RecordingHttp, SupabaseRawStore
 from pipeline.schema import validate
+from pipeline.sources import SOURCES
 from pipeline.sources.base import SkipSource
 
 MAX_INVALID_SHARE = 0.2
+RANKING_INPUTS = {"trade_flows", "country_indicators"}
 
 
 class Source(Protocol):
@@ -36,12 +50,32 @@ def _row_counts(changes: UpsertResult) -> dict[str, int]:
     return {f"rows_{k}": v for k, v in asdict(changes).items()}
 
 
+def _rerank(store: Store, run_id: str, changed: bool) -> None:
+    if not changed:
+        store.log_event(run_id, "rerank", "skipped", message="no trade or macro data changed")
+        return
+    trade, indicators = store.read("trade_flows"), store.read("country_indicators")
+    if trade.empty or indicators.empty:
+        store.log_event(run_id, "rerank", "skipped", message="waiting for both trade and macro data")
+        return
+    by_category = rankings(trade, indicators)
+    for category, rows in by_category.items():
+        store.save_ranking(run_id, category, "corrected", "default", rows)
+    top3 = [r["iso3"] for r in by_category["all"][:3]]
+    store.log_event(run_id, "rerank", metrics={"categories": len(by_category), "top3": top3})
+
+
 def run_sources(
-    sources: list[Source], store: Store, http: Any, trigger: str = "local", raw_store: Any = None
+    sources: list[Source],
+    store: Store,
+    http: Any,
+    trigger: str = "local",
+    raw_store: Any = None,
+    ci_run_url: str | None = None,
 ) -> list[RunResult]:
     results = []
     for source in sources:
-        run_id = store.start_run(source.name, trigger)
+        run_id = store.start_run(source.name, trigger, ci_run_url)
         store.log_event(run_id, "start")
         step, fetched, invalid, raw = "fetch", None, None, None
         try:
@@ -67,6 +101,9 @@ def run_sources(
             step = "upsert"
             changes = store.upsert(source.table, df, run_id)
             store.log_event(run_id, "upsert", metrics=asdict(changes))
+            if source.table in RANKING_INPUTS:
+                step = "rerank"
+                _rerank(store, run_id, changed=bool(changes.inserted or changes.updated))
         except SkipSource as e:
             store.log_event(run_id, step, "skipped", message=str(e))
             store.log_event(run_id, "finish", "skipped")
@@ -86,3 +123,49 @@ def run_sources(
         store.finish_run(run_id, "success", rows_fetched=fetched, rows_invalid=invalid, **_row_counts(changes))
         results.append(RunResult(source.name, run_id, "success", **asdict(changes)))
     return results
+
+
+GITHUB_TRIGGERS = {"schedule": "schedule", "workflow_dispatch": "manual", "push": "ci", "pull_request": "ci"}
+
+
+def _trigger(env) -> tuple[str, str | None]:
+    event = env.get("GITHUB_EVENT_NAME")
+    if not event:
+        return "local", None
+    url = f"{env.get('GITHUB_SERVER_URL')}/{env.get('GITHUB_REPOSITORY')}/actions/runs/{env.get('GITHUB_RUN_ID')}"
+    return GITHUB_TRIGGERS.get(event, event), url
+
+
+def _raw_store(env):
+    if env.get("SUPABASE_URL") and env.get("SUPABASE_SERVICE_ROLE_KEY"):
+        return SupabaseRawStore(env["SUPABASE_URL"], env["SUPABASE_SERVICE_ROLE_KEY"])
+    return LocalRawStore(env.get("RAW_DIR", "data"))
+
+
+def main(argv: list[str] | None = None, env=None, http: Any = None) -> int:
+    env = os.environ if env is None else env
+    parser = argparse.ArgumentParser(prog="python -m pipeline.run")
+    parser.add_argument("--source", action="append", choices=sorted(SOURCES), help="repeatable")
+    parser.add_argument("--all", action="store_true")
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as e:  # argparse exits 2 on bad arguments
+        return int(e.code or 0)
+    names = sorted(SOURCES) if args.all else args.source
+    if not names:
+        parser.print_usage()
+        return 2
+    url = env.get("DATABASE_URL", "sqlite:///data/local.db")
+    if url.startswith("sqlite:///"):
+        Path(url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
+    store = Store(url)
+    store.create_all()
+    trigger, ci_run_url = _trigger(env)
+    results = run_sources([SOURCES[n]() for n in names], store, http or Http(), trigger, _raw_store(env), ci_run_url)
+    for r in results:
+        print(f"{r.source:12} {r.status:8} +{r.inserted} ~{r.updated} ={r.unchanged}  run {r.run_id}")
+    return 1 if any(r.status == "failed" for r in results) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

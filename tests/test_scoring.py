@@ -1,33 +1,12 @@
 """The pipeline's scoring must reproduce the exploratory screen in docs/pm/03_data_analysis.md §3."""
 
-from pathlib import Path
-
 import pandas as pd
 import pytest
+from analysis_data import ANALYSIS, load_tables
 
 from pipeline.indicators import build_features, screen
 
-ANALYSIS = Path(__file__).resolve().parents[1] / "analysis"
 PILLARS = ["Market growth", "Market size", "K-momentum (trade)", "Entry ease"]
-
-
-def load_tables():
-    """The analysis' raw pulls, reshaped into the pipeline's trade_flows / country_indicators tables."""
-    imports = pd.read_csv(ANALYSIS / "data/comtrade_imports.csv", dtype={"hs": str})
-    exports = pd.read_csv(ANALYSIS / "data/comtrade_kr_exports.csv", dtype={"hs": str})
-    trade = pd.concat(
-        [
-            pd.DataFrame({"reporter_iso3": imports.iso3, "partner_iso3": imports.partner, "flow": "M"}),
-            pd.DataFrame({"reporter_iso3": "KOR", "partner_iso3": exports.iso3, "flow": "X"}),
-        ],
-        ignore_index=True,
-    )
-    both = pd.concat([imports, exports], ignore_index=True)
-    trade = trade.assign(
-        hs=both.hs, freq="A", period=both.year.astype(str), value_usd=both.value_usd, net_kg=both.net_kg
-    )
-    wdi = pd.read_csv(ANALYSIS / "data/wdi.csv")
-    return trade, wdi[["iso3", "indicator", "year", "value"]]
 
 
 @pytest.fixture(scope="module")

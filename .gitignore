@@ -30,3 +30,6 @@ frontend/playwright-report/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Local pipeline database
+data/*.db

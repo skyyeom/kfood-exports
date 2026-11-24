@@ -39,3 +39,23 @@ class LocalRawStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         return str(path)
+
+
+class SupabaseRawStore:
+    """Supabase Storage bucket (default "raw"), written with the service-role key."""
+
+    def __init__(self, url: str, service_key: str, bucket: str = "raw"):
+        import requests
+
+        self.base, self.bucket = url.rstrip("/"), bucket
+        self.session = requests.Session()
+        self.session.headers.update(
+            {"Authorization": f"Bearer {service_key}", "x-upsert": "true", "Content-Type": "application/zip"}
+        )
+
+    def put(self, key: str, data: bytes) -> str:
+        path = f"{self.bucket}/{key.removeprefix('raw/')}"
+        r = self.session.post(f"{self.base}/storage/v1/object/{path}", data=data, timeout=60)
+        if r.status_code >= 400:
+            raise RuntimeError(f"Supabase Storage upload failed: HTTP {r.status_code}")
+        return f"storage://{path}"
