@@ -62,3 +62,21 @@ def test_postgres_without_the_migration_fails_fast_instead_of_creating_tables_wi
 
     assert code == 3
     assert not sa.inspect(Store(url).engine).has_table("ingest_runs")
+
+
+def test_rerank_recomputes_rankings_without_fetching_and_is_logged_as_a_run(tmp_path):
+    from analysis_data import load_tables
+
+    db = f"sqlite:///{tmp_path}/w.db"
+    store = Store(db)
+    store.create_all()
+    trade, indicators = load_tables()
+    seed = store.start_run("seed")
+    store.upsert("trade_flows", trade, seed)
+    store.upsert("country_indicators", indicators, seed)
+
+    code = main(["--rerank"], env={"DATABASE_URL": db}, http=RecordedHttp())
+
+    assert code == 0
+    assert [c["iso3"] for c in store.latest_ranking()[:3]] == ["USA", "CHN", "PHL"]
+    assert store.runs().set_index("source").loc["rerank", "status"] == "success"

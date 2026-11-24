@@ -356,3 +356,11 @@ def test_data_without_a_current_ranking_is_ranked_on_the_next_run_even_if_unchan
     run_sources([StaticSource("wdi", "country_indicators", indicators)], store, http=None)
 
     assert [c["iso3"] for c in store.latest_ranking()[:3]] == ["USA", "CHN", "PHL"]
+
+
+def test_stored_ranking_explains_each_country(store):
+    run_sources(scoring_sources(), store, http=None)
+
+    usa = store.latest_ranking()[0]["reasons"]
+    assert usa["summary"].startswith("The United States ranks #1")
+    assert usa["confidence"]["level"] == "robust"

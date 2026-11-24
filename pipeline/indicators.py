@@ -56,6 +56,7 @@ def build_features(trade: pd.DataFrame, indicators: pd.DataFrame, hs: list[str] 
     base = kr_tot.get(last - 5, pd.Series(np.nan, index=kr_tot.index))
     f = pd.DataFrame({"kr_exports_latest_musd": kr_tot[last] / 1e6})
     f["kr_export_cagr_5y"] = [cagr(a, b, 5) for a, b in zip(base, kr_tot[last], strict=True)]
+    f["kr_latest_year"] = last
     f["kr_export_growth_loglinear"] = kr_tot.loc[:, last - 6 : last].apply(loglinear_growth, axis=1)
 
     # Destination market size and growth, at each country's latest year with all four HS codes reported
@@ -77,6 +78,7 @@ def build_features(trade: pd.DataFrame, indicators: pd.DataFrame, hs: list[str] 
             "imports_latest_musd": wld.loc[iso, ly] / 1e6,
             "import_cagr_5y": cagr(wld.loc[iso].get(ly - 5), wld.loc[iso, ly], 5),
             "imports_from_kr_musd": kor.loc[iso].get(ly, np.nan) / 1e6 if iso in kor.index else np.nan,
+            "kr_exports_at_import_year_musd": kr_tot.loc[iso].get(ly, np.nan) / 1e6 if iso in kr_tot.index else np.nan,
         }
         a, b = vol.loc[(iso, ly - 5)] if (iso, ly - 5) in vol.index else None, vol.loc[(iso, ly)]
         if a is not None and a.n >= len(hs) and b.n >= len(hs):
@@ -84,6 +86,7 @@ def build_features(trade: pd.DataFrame, indicators: pd.DataFrame, hs: list[str] 
         mkt.append(row)
     mkt = pd.DataFrame(mkt).set_index("iso3")
     mkt["kr_market_share"] = mkt.imports_from_kr_musd / mkt.imports_latest_musd
+    mkt["mirror_ratio"] = mkt.imports_from_kr_musd / mkt.kr_exports_at_import_year_musd  # partner / Korea-reported
 
     # Macro
     def latest(ind: str) -> pd.Series:
@@ -99,12 +102,16 @@ def build_features(trade: pd.DataFrame, indicators: pd.DataFrame, hs: list[str] 
     # Each window ends at the indicator's latest year with broad coverage, independent of the trade data's year
     gdp = indicators[indicators.indicator == "gdp_growth_pct"]
     g_end = covered_until(gdp)
+    macro["gdp_growth_window"] = f"{g_end - 4}–{g_end}" if g_end else None
     macro["gdp_growth_avg_5y"] = (
         gdp[gdp.year.between(g_end - 4, g_end)].groupby("iso3").value.mean() if g_end else np.nan
     )
     hh = indicators[indicators.indicator == "hh_consumption_pc_const_usd"]
     hc = hh.pivot(index="iso3", columns="year", values="value")
     h_end = covered_until(hh)
+    macro["hh_cons_window"] = f"{h_end - 5}–{h_end}" if h_end else None
+    lpi = indicators[indicators.indicator == "lpi_score"].sort_values("year").groupby("iso3").year.last()
+    macro["lpi_year"] = lpi
     macro["hh_cons_pc_cagr_5y"] = [
         cagr(hc.loc[i].get(h_end - 5), hc.loc[i].get(h_end), 5) if h_end and i in hc.index else np.nan
         for i in macro.index
@@ -184,11 +191,15 @@ CATEGORIES = {"all": HS, **{code: [code] for code in HS}}
 def rankings(trade: pd.DataFrame, indicators: pd.DataFrame) -> dict[str, list[dict]]:
     """Default-weight corrected ranking per category, as JSON-ready rows ordered by rank."""
     out = {}
+    from pipeline.reasons import reason_pack
+
     for category, codes in CATEGORIES.items():
-        ranked = screen(build_features(trade, indicators, hs=codes))
+        features = build_features(trade, indicators, hs=codes)
+        ranked = screen(features)
         rows = ranked.reset_index(names="iso3").assign(rank=lambda d: range(1, len(d) + 1))
         out[category] = [
             {k: (None if isinstance(v, float) and np.isnan(v) else v) for k, v in r.items()}
+            | {"reasons": reason_pack(r["iso3"], ranked, features)}
             for r in rows.astype(object).to_dict(orient="records")
         ]
     return out

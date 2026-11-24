@@ -99,7 +99,7 @@ WITS MFN rows are per HS6 line; overrides may be given at HS4, in which case the
 ### `ranking_snapshots`
 `id`, `run_id`, `computed_at`, `category` (`all` or an HS code), `variant` (`corrected`: volume growth, hubs excluded; `naive` reserved for the FR-1.6 toggle), `preset` (`default` until M2 presets), `payload`.
 
-`payload` is a JSON list ordered by rank, one object per country: `iso3`, `rank`, `score`, the four pillar values, `top3_probability` (±20% weights), `top3_prob_random_weights` (Dirichlet), `imputed_pillars` (pillars filled with the median), `missing_indicators` (indicators absent inside a pillar), `latest_year` (data year of the import figures) and `hub`.
+`payload` is a JSON list ordered by rank, one object per country: `iso3`, `rank`, `score`, the four pillar values, `top3_probability` (±20% weights), `top3_prob_random_weights` (Dirichlet), `imputed_pillars` (pillars filled with the median), `missing_indicators` (indicators absent inside a pillar), `latest_year` (data year of the import figures), `hub` and `reasons`: a plain-language explanation built from the same data (`summary`; the two strongest pillars and the weakest, each with its rank and the facts behind it, with value, unit, period and source; `confidence` (`robust`, `depends on priorities` or `fragile`, from the two P(TOP3) values); and `caveats` such as mirror-data gaps, local production, hubs and missing data). Recompute after a scoring change with `python -m pipeline.run --rerank`.
 
 ## Access (RLS)
 - `anon`: `select` on every table above.

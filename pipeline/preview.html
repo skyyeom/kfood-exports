@@ -93,6 +93,21 @@
   #tip dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 6px 0 0; }
   #tip dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   .empty { color: var(--muted); padding: 12px 0; }
+  .why { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .why .card { padding: 14px; }
+  .why-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .why-rank { font-size: 12px; color: var(--muted); }
+  .why-name { font-size: 18px; font-weight: 650; }
+  .why p { margin: 8px 0; }
+  .why h3 { font-size: 12px; font-weight: 650; color: var(--ink-2); margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .03em; }
+  .why ul { margin: 0; padding-left: 18px; }
+  .why li { margin: 3px 0; }
+  .fact { font-size: 12px; color: var(--ink-2); }
+  .src { font-size: 11px; color: var(--muted); }
+  .s-robust i { background: var(--good); }
+  .s-depends i { background: var(--warning); color: #0b0b0b; }
+  .s-fragile i { background: var(--serious); }
+  .caveat { font-size: 12px; color: var(--ink-2); border-left: 3px solid var(--warning); padding-left: 8px; margin: 4px 0; }
   .pill { font-size: 11px; color: var(--ink-2); border: 1px solid var(--ring); border-radius: 999px; padding: 1px 8px; }
 </style>
 </head>
@@ -125,8 +140,10 @@
   </section>
 
   <section class="card">
-    <h2>TOP3 screen · default weights, volume growth, hubs excluded</h2>
+    <h2>TOP3 and why · default weights, volume growth, hubs excluded</h2>
     <div class="tabs" id="tabs" role="group" aria-label="Category"></div>
+    <div class="why" id="why" aria-live="polite"></div>
+    <h3 class="sub" style="margin:8px 0">All scored countries</h3>
     <div class="scroll" id="ranking"></div>
     <p class="sub">Score 0–100 from four pillars (growth 30%, size 25%, K-momentum 30%, entry ease 15%). P(TOP3): share of 5,000 weight draws (±20%) in which the country ranks in the top three. Hover a row for its pillars.</p>
   </section>
@@ -136,6 +153,35 @@
 <script>
 const CATEGORIES = { all: "All four", "1704": "Sugar confectionery", "1806": "Chocolate", "1905": "Bakery & biscuits", "2105": "Ice cream" };
 const PILLARS = ["Market growth", "Market size", "K-momentum (trade)", "Entry ease"];
+const CONF = { robust: ["robust", "✓", "Robust pick"], "depends on priorities": ["depends", "!", "Depends on priorities"], fragile: ["fragile", "!", "Fragile pick"] };
+const fmtFact = f => {
+  const v = f.value, u = f.unit;
+  const t = u === "%/yr" ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}% per year` : u === "%" ? `${v.toFixed(1)}%` :
+            u === "US$ M" ? `US$${v.toLocaleString(undefined, { maximumFractionDigits: 1 })}M` : u === "US$" ? `US$${Math.round(v).toLocaleString()}` :
+            u === "million" ? `${Math.round(v).toLocaleString()} million` : v.toFixed(2);
+  return `${esc(f.label)}: <b>${esc(t)}</b> <span class="src">${esc([f.period, f.source].filter(Boolean).join(" · "))}</span>`;
+};
+const pillarLine = e => `<li><b>${esc(e.name[0].toUpperCase() + e.name.slice(1))}</b> <span class="muted">#${e.rank} of ${e.of}</span>
+  ${e.facts.length ? `<div class="fact">${e.facts.map(fmtFact).join("<br>")}</div>` : ""}</li>`;
+
+function renderWhy(st) {
+  const top = (st.ranking[category] || []).slice(0, 3);
+  const el = document.getElementById("why");
+  if (!top.length) { el.innerHTML = ""; return; }
+  el.innerHTML = top.map(r => {
+    const w = r.reasons, [cls, icon, label] = CONF[w.confidence.level];
+    return `<article class="card" aria-label="${esc(w.name)}, rank ${w.rank}">
+      <div class="why-head"><div><div class="why-rank">#${w.rank} · score ${r.score.toFixed(1)}</div><div class="why-name">${esc(w.name)}</div></div>
+        <span class="status s-${cls}"><i aria-hidden="true">${icon}</i>${label}</span></div>
+      <p>${esc(w.summary)}</p>
+      <h3>Strengths</h3><ul>${w.strengths.map(pillarLine).join("")}</ul>
+      <h3>Weakest factor</h3><ul>${pillarLine(w.weakest)}</ul>
+      <h3>How sure</h3><p class="fact">${esc(w.confidence.text[0].toUpperCase() + w.confidence.text.slice(1))}</p>
+      ${w.caveats.length ? `<h3>Caveats</h3>${w.caveats.map(c => `<div class="caveat">${esc(c)}</div>`).join("")}` : ""}
+    </article>`;
+  }).join("");
+}
+
 const ICON = { success: "✓", ok: "✓", warning: "!", failed: "✕", error: "✕", skipped: "–", running: "●", "never run": "–" };
 let category = "all", last = null;
 
@@ -228,7 +274,7 @@ function renderRanking(st) {
     const r = rows[+tr.dataset.i];
     tr.addEventListener("mousemove", e => {
       const tip = document.getElementById("tip");
-      tip.innerHTML = `<b>${esc(r.iso3)}</b> · rank ${r.rank} · score ${r.score.toFixed(1)}<dl>${
+      tip.innerHTML = `<b>${esc(r.reasons?.name || r.iso3)}</b> · rank ${r.rank} · score ${r.score.toFixed(1)}<div class="fact" style="margin-top:4px">${esc(r.reasons?.summary || "")}</div><dl>${
         PILLARS.map(p => `<dt>${p}</dt><dd>${(r[p] * 100).toFixed(0)}</dd>`).join("")
       }<dt>P(TOP3), any weights</dt><dd>${Math.round(r.top3_prob_random_weights * 100)}%</dd><dt>Import data year</dt><dd>${r.latest_year ?? "—"}</dd></dl>`;
       tip.hidden = false;
@@ -243,7 +289,7 @@ async function refresh() {
   try {
     const st = await (await fetch("/api/state")).json();
     last = st;
-    renderKpis(st); renderSources(st); renderFeed(st); renderRevisions(st); renderRanking(st);
+    renderKpis(st); renderSources(st); renderFeed(st); renderRevisions(st); renderWhy(st); renderRanking(st);
     document.getElementById("updated").textContent = `Updated ${new Date(st.generated_at).toLocaleTimeString()} · refreshes every 3 s`;
   } catch (e) {
     document.getElementById("updated").textContent = "Preview server not reachable";
@@ -254,7 +300,7 @@ document.addEventListener("click", async e => {
   const run = e.target.closest("[data-run]");
   if (run) { run.disabled = true; run.textContent = "Starting…"; await fetch(`/api/run?source=${encodeURIComponent(run.dataset.run)}`, { method: "POST" }); refresh(); }
   const cat = e.target.closest("[data-cat]");
-  if (cat) { category = cat.dataset.cat; renderTabs(); if (last) renderRanking(last); }
+  if (cat) { category = cat.dataset.cat; renderTabs(); if (last) { renderWhy(last); renderRanking(last); } }
 });
 renderTabs();
 refresh();

@@ -50,9 +50,9 @@ def _row_counts(changes: UpsertResult) -> dict[str, int]:
     return {f"rows_{k}": v for k, v in asdict(changes).items()}
 
 
-def _rerank(store: Store, run_id: str) -> None:
+def _rerank(store: Store, run_id: str, force: bool = False) -> None:
     """Re-rank when scoring inputs changed since the last ranking, so a ranking missed earlier is caught up."""
-    if not store.ranking_is_stale():
+    if not force and not store.ranking_is_stale():
         store.log_event(run_id, "rerank", "skipped", message="no trade or macro data changed")
         return
     try:
@@ -126,6 +126,22 @@ def run_sources(
     return results
 
 
+def _forced_rerank(store: Store, trigger: str, ci_run_url: str | None) -> int:
+    run_id = store.start_run("rerank", trigger, ci_run_url)
+    store.log_event(run_id, "start")
+    try:
+        _rerank(store, run_id, force=True)
+    except Exception as e:  # noqa: BLE001 — logged for the Automation page, then reported via the exit code
+        store.log_event(run_id, "rerank", "error", message=f"{type(e).__name__}: {e}")
+        store.log_event(run_id, "finish", "error")
+        store.finish_run(run_id, "failed", error=f"{type(e).__name__}: {e}")
+        return 1
+    store.log_event(run_id, "finish")
+    store.finish_run(run_id, "success")
+    print(f"rerank       success  run {run_id}")
+    return 0
+
+
 GITHUB_TRIGGERS = {"schedule": "schedule", "workflow_dispatch": "manual", "push": "ci", "pull_request": "ci"}
 
 
@@ -148,12 +164,13 @@ def main(argv: list[str] | None = None, env=None, http: Any = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m pipeline.run")
     parser.add_argument("--source", action="append", choices=sorted(SOURCES), help="repeatable")
     parser.add_argument("--all", action="store_true")
+    parser.add_argument("--rerank", action="store_true", help="recompute rankings now (e.g. after a scoring change)")
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:  # argparse exits 2 on bad arguments
         return int(e.code or 0)
     names = sorted(SOURCES) if args.all else args.source
-    if not names:
+    if not names and not args.rerank:
         parser.print_usage()
         return 2
     url = env.get("DATABASE_URL", "sqlite:///data/local.db")
@@ -166,6 +183,8 @@ def main(argv: list[str] | None = None, env=None, http: Any = None) -> int:
         print("Database has no WellGTM tables. Run supabase/migrations/0001_init.sql first.", file=sys.stderr)
         return 3
     trigger, ci_run_url = _trigger(env)
+    if args.rerank:
+        return _forced_rerank(store, trigger, ci_run_url)
     results = run_sources([SOURCES[n]() for n in names], store, http or Http(), trigger, _raw_store(env), ci_run_url)
     for r in results:
         print(f"{r.source:12} {r.status:8} +{r.inserted} ~{r.updated} ={r.unchanged}  run {r.run_id}")
