@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WellGTM Automation</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.04);
+    --series-1: #2a78d6; --series-1-soft: #cde2fb;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --good-text: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+      --series-1: #3987e5; --series-1-soft: #184f95; --good-text: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.05);
+    --series-1: #3987e5; --series-1-soft: #184f95; --good-text: #0ca30c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 64px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  h2 { font-size: 15px; margin: 0 0 12px; font-weight: 650; }
+  .sub { color: var(--ink-2); font-size: 13px; }
+  .muted { color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; }
+  section { margin-top: 20px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .kpi .label { color: var(--ink-2); font-size: 12px; }
+  .kpi .value { font-size: 26px; font-weight: 650; margin-top: 4px; }
+  .kpi .note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .grid-sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .src-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .src-name { font-weight: 650; }
+  .src dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 10px 0 12px; font-size: 13px; }
+  .src dt { color: var(--muted); } .src dd { margin: 0; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .status i { width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center; font-style: normal; font-size: 10px; color: #fff; }
+  .s-success i, .s-ok i { background: var(--good); }
+  .s-warning i { background: var(--warning); color: #0b0b0b; }
+  .s-skipped i, .s-never i { background: var(--axis); color: var(--ink); }
+  .s-failed i, .s-error i { background: var(--critical); }
+  .s-running i { background: var(--series-1); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .s-running i { animation: none; } }
+  button { font: inherit; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--ring); background: var(--surface); color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--wash); }
+  button:disabled { color: var(--muted); cursor: default; }
+  button.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+  .two { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; }
+  @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+  .feed { list-style: none; margin: 0; padding: 0; max-height: 560px; overflow: auto; }
+  .feed li { padding: 10px 0; border-top: 1px solid var(--grid); }
+  .feed li:first-child { border-top: 0; }
+  .run-top { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+  .steps { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .step { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--ring); color: var(--ink-2); }
+  .step.ok { border-color: color-mix(in srgb, var(--good) 45%, transparent); }
+  .step.warning { border-color: var(--warning); }
+  .step.error { border-color: var(--critical); color: var(--ink); }
+  .step.skipped { border-style: dashed; }
+  .counts { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--ink-2); }
+  .msg { font-size: 12px; color: var(--ink-2); margin-top: 4px; overflow-wrap: anywhere; }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--wash); color: var(--ink-2); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; padding: 4px 8px 6px 0; border-bottom: 1px solid var(--axis); }
+  td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .scroll { overflow-x: auto; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .tabs button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+  .bar-cell { width: 34%; min-width: 140px; }
+  .bar { position: relative; height: 14px; }
+  .bar span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--series-1); border-radius: 0 4px 4px 0; }
+  .bar.soft span { background: var(--series-1-soft); }
+  .bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .bar-wrap .bar { flex: 1; }
+  .bar-wrap b { font-weight: 600; min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
+  tr.top3 td:first-child { font-weight: 700; }
+  tr:hover td { background: var(--wash); }
+  #tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12); max-width: 280px; }
+  #tip dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 6px 0 0; }
+  #tip dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); padding: 12px 0; }
+  .pill { font-size: 11px; color: var(--ink-2); border: 1px solid var(--ring); border-radius: 999px; padding: 1px 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>WellGTM · Automation &amp; Data Health</h1>
+      <div class="sub">Local preview of the M3 dashboard page (FR-4.6, US-34), live from the pipeline database</div>
+    </div>
+    <div class="sub" id="updated">Loading…</div>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section class="card">
+    <h2>Sources</h2>
+    <div class="grid-sources" id="sources"></div>
+  </section>
+
+  <section class="two">
+    <div class="card">
+      <h2>Live run feed</h2>
+      <ul class="feed" id="feed"></ul>
+    </div>
+    <div class="card">
+      <h2>What changed (revised values)</h2>
+      <div class="scroll" id="revisions"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>TOP3 screen · default weights, volume growth, hubs excluded</h2>
+    <div class="tabs" id="tabs" role="group" aria-label="Category"></div>
+    <div class="scroll" id="ranking"></div>
+    <p class="sub">Score 0–100 from four pillars (growth 30%, size 25%, K-momentum 30%, entry ease 15%). P(TOP3): share of 5,000 weight draws (±20%) in which the country ranks in the top three. Hover a row for its pillars.</p>
+  </section>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+const CATEGORIES = { all: "All four", "1704": "Sugar confectionery", "1806": "Chocolate", "1905": "Bakery & biscuits", "2105": "Ice cream" };
+const PILLARS = ["Market growth", "Market size", "K-momentum (trade)", "Entry ease"];
+const ICON = { success: "✓", ok: "✓", warning: "!", failed: "✕", error: "✕", skipped: "–", running: "●", "never run": "–" };
+let category = "all", last = null;
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ago = iso => {
+  if (!iso) return "never";
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 0) { const m = -s / 60; return m < 60 ? `in ${Math.round(m)} min` : m < 2880 ? `in ${Math.round(m / 60)} h` : `in ${Math.round(m / 1440)} days`; }
+  return s < 60 ? `${Math.round(s)} s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 172800 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`;
+};
+const status = (st, label) => `<span class="status s-${esc(st.split(" ")[0])}"><i aria-hidden="true">${ICON[st] ?? "•"}</i>${esc(label ?? st)}</span>`;
+const fmt = n => n == null ? "—" : Number(n).toLocaleString();
+const dur = r => r.finished_at ? `${((Date.parse(r.finished_at) - Date.parse(r.started_at)) / 1000).toFixed(1)} s` : "…";
+
+function renderKpis(st) {
+  const top = (st.ranking.all || []).slice(0, 3).map(c => c.iso3);
+  const healthy = st.sources.filter(s => s.status === "success").length;
+  const rows = Object.values(st.rows).reduce((a, b) => a + b, 0);
+  const lastRun = st.runs[0];
+  document.getElementById("kpis").innerHTML = [
+    ["Current TOP3", top.length ? top.join(" · ") : "—", top.length ? "all categories, default weights" : "waiting for trade + macro data"],
+    ["Sources healthy", `${healthy} / ${st.sources.length}`, "latest run succeeded"],
+    ["Rows tracked", fmt(rows), "across 5 data tables"],
+    ["Last run", lastRun ? ago(lastRun.started_at) : "—", lastRun ? `${lastRun.source} · ${lastRun.status}` : "no runs yet"],
+  ].map(([l, v, n]) => `<div class="card kpi"><div class="label">${l}</div><div class="value">${esc(v)}</div><div class="note">${esc(n)}</div></div>`).join("");
+}
+
+function renderSources(st) {
+  document.getElementById("sources").innerHTML = st.sources.map(s => {
+    const running = st.running.includes(s.source);
+    const label = running ? "running" : s.status;
+    return `<div class="card src">
+      <div class="src-head"><span class="src-name">${esc(s.source)}</span>${status(label)}</div>
+      <dl><dt>Last success</dt><dd>${esc(ago(s.last_success))}</dd>
+          <dt>Next scheduled</dt><dd>${esc(s.next_run ? ago(s.next_run) : "—")}</dd></dl>
+      ${s.message && s.status !== "success" ? `<div class="msg">${esc(s.message)}</div>` : ""}
+      <button class="primary" data-run="${esc(s.source)}" ${running ? "disabled" : ""}>${running ? "Running…" : "Run now"}</button>
+    </div>`;
+  }).join("");
+}
+
+function renderFeed(st) {
+  const el = document.getElementById("feed");
+  if (!st.runs.length) { el.innerHTML = `<li class="empty">No runs yet. Press “Run now” on a source.</li>`; return; }
+  el.innerHTML = st.runs.map(r => {
+    const counts = r.status === "running" ? "" : `<span class="counts">+${r.rows_inserted ?? 0} new · ~${r.rows_updated ?? 0} revised · =${r.rows_unchanged ?? 0} unchanged${r.rows_invalid ? ` · ✕${r.rows_invalid} invalid` : ""}</span>`;
+    const steps = r.events.map(e => `<span class="step ${esc(e.status)}" title="${esc(e.message || "")}">${esc(e.step)}${e.status !== "ok" ? " · " + esc(e.status) : ""}</span>`).join("");
+    const rerank = r.events.find(e => e.step === "rerank" && e.metrics && e.metrics.top3);
+    return `<li>
+      <div class="run-top"><b>${esc(r.source)}</b>${status(r.status)}<span class="tag">${esc(r.trigger)}</span>
+        <span class="muted">${esc(ago(r.started_at))} · ${esc(dur(r))}</span>${counts}</div>
+      <div class="steps">${steps}</div>
+      ${rerank ? `<div class="msg">Re-ranked: TOP3 ${esc(rerank.metrics.top3.join(" · "))}</div>` : ""}
+      ${r.error ? `<div class="msg">${esc(r.error)}</div>` : ""}
+    </li>`;
+  }).join("");
+}
+
+function renderRevisions(st) {
+  const el = document.getElementById("revisions");
+  if (!st.revisions.length) { el.innerHTML = `<div class="empty">No revisions yet. When an upstream source changes a value it already sent, the old and new values appear here.</div>`; return; }
+  el.innerHTML = `<table><thead><tr><th>Table</th><th>Row</th><th>Field</th><th class="num">Old</th><th class="num">New</th><th>When</th></tr></thead><tbody>${
+    st.revisions.map(v => `<tr><td>${esc(v.table_name)}</td><td>${esc(Object.entries(v.row_key).filter(([k]) => k !== "source").map(([, x]) => x).join(" · "))}</td>
+      <td>${esc(v.field)}</td><td class="num">${esc(v.old_value)}</td><td class="num">${esc(v.new_value)}</td><td class="muted">${esc(ago(v.detected_at))}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function renderTabs() {
+  document.getElementById("tabs").innerHTML = Object.entries(CATEGORIES).map(([k, v]) =>
+    `<button data-cat="${k}" aria-pressed="${k === category}">${esc(v)}${k !== "all" ? ` <span class="muted">${k}</span>` : ""}</button>`).join("");
+}
+
+function renderRanking(st) {
+  const rows = st.ranking[category] || [];
+  const el = document.getElementById("ranking");
+  if (!rows.length) { el.innerHTML = `<div class="empty">No ranking yet. Run <b>comtrade</b> and <b>wdi</b>; the pipeline re-ranks automatically once both have data.</div>`; return; }
+  const max = Math.max(...rows.map(r => r.score));
+  el.innerHTML = `<table><thead><tr><th class="num">#</th><th>Country</th><th class="bar-cell">Score</th><th class="bar-cell">P(TOP3)</th><th>Notes</th></tr></thead><tbody>${
+    rows.map((r, i) => {
+      const notes = [r.hub ? "hub" : "", r.imputed_pillars?.length ? `imputed: ${r.imputed_pillars.join(", ")}` : "",
+                     r.missing_indicators?.length ? `${r.missing_indicators.length} indicator(s) missing` : ""].filter(Boolean);
+      return `<tr class="${i < 3 ? "top3" : ""}" data-i="${i}">
+        <td class="num">${r.rank}</td><td>${esc(r.iso3)}</td>
+        <td><div class="bar-wrap"><div class="bar"><span style="width:${(r.score / max * 100).toFixed(1)}%"></span></div><b>${r.score.toFixed(1)}</b></div></td>
+        <td><div class="bar-wrap"><div class="bar soft"><span style="width:${(r.top3_probability * 100).toFixed(1)}%"></span></div><b>${Math.round(r.top3_probability * 100)}%</b></div></td>
+        <td>${notes.map(n => `<span class="pill">${esc(n)}</span>`).join(" ")}</td></tr>`;
+    }).join("")
+  }</tbody></table>`;
+  el.querySelectorAll("tr[data-i]").forEach(tr => {
+    const r = rows[+tr.dataset.i];
+    tr.addEventListener("mousemove", e => {
+      const tip = document.getElementById("tip");
+      tip.innerHTML = `<b>${esc(r.iso3)}</b> · rank ${r.rank} · score ${r.score.toFixed(1)}<dl>${
+        PILLARS.map(p => `<dt>${p}</dt><dd>${(r[p] * 100).toFixed(0)}</dd>`).join("")
+      }<dt>P(TOP3), any weights</dt><dd>${Math.round(r.top3_prob_random_weights * 100)}%</dd><dt>Import data year</dt><dd>${r.latest_year ?? "—"}</dd></dl>`;
+      tip.hidden = false;
+      tip.style.left = Math.min(e.clientX + 14, innerWidth - 300) + "px";
+      tip.style.top = (e.clientY + 14) + "px";
+    });
+    tr.addEventListener("mouseleave", () => { document.getElementById("tip").hidden = true; });
+  });
+}
+
+async function refresh() {
+  try {
+    const st = await (await fetch("/api/state")).json();
+    last = st;
+    renderKpis(st); renderSources(st); renderFeed(st); renderRevisions(st); renderRanking(st);
+    document.getElementById("updated").textContent = `Updated ${new Date(st.generated_at).toLocaleTimeString()} · refreshes every 3 s`;
+  } catch (e) {
+    document.getElementById("updated").textContent = "Preview server not reachable";
+  }
+}
+
+document.addEventListener("click", async e => {
+  const run = e.target.closest("[data-run]");
+  if (run) { run.disabled = true; run.textContent = "Starting…"; await fetch(`/api/run?source=${encodeURIComponent(run.dataset.run)}`, { method: "POST" }); refresh(); }
+  const cat = e.target.closest("[data-cat]");
+  if (cat) { category = cat.dataset.cat; renderTabs(); if (last) renderRanking(last); }
+});
+renderTabs();
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

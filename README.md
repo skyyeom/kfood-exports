@@ -26,6 +26,8 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # Python 3.12+
 ```
 Without `DATABASE_URL`, data goes to `data/local.db` (SQLite) and raw responses to `data/raw/`.
 
+**Local dashboard preview:** `.venv/bin/python -m pipeline.preview`, then open http://localhost:8765. It shows source freshness with **Run now** buttons, the live run feed, revised values and the TOP3 screen, read live from the same database. It is a development preview of the Automation & Data Health page until the M3 frontend exists.
+
 ## Turn on the automation (one-time setup)
 1. Create a free Supabase project. **Before any workflow runs**, open the SQL editor and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql). It creates the tables, read-only RLS policies, the Realtime feed and the private `raw` bucket.
 2. In GitHub → Settings → Secrets and variables → Actions, add:
