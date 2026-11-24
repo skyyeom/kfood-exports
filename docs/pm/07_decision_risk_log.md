@@ -20,6 +20,10 @@
 | D15 | Indonesia halal date = **18 Oct 2028** (PP 40/2026) | Oct 2026 (older sources) | Regulation enacted 14 Oct 2026; older sources are stale | [02 §6](02_market_analysis.md) [R5] |
 | D16 | Position as the **manufacturer-specific decision layer** (ranked + explainable + monitored + regulation Q&A), complementing syndicated research and public tools | Compete on AI Q&A | No competitor combines all four; aT ChaTi and Tridge already offer cited AI chat | [09 §3](09_market_research_report.md#3-competitor--alternative-analysis) |
 | D17 | Treat export-support organisations as **partners/data sources** before buyers | Primary Horizon 3 segment | aT and KOTRA are building their own AI tools | [09 §3.4](09_market_research_report.md#34-competitive-implications) |
+| D18 | **Live database + scheduled ingestion**; browser re-ranks custom weights over the latest pillar table | Static snapshot committed by CI; server-side re-rank | Shows automation; meets ≤500 ms without a server round-trip; dashboard survives HF cold starts (R5) | [Engineering plan](../engineering_plan.md) |
+| D19 | **No Prophet**; naïve/drift/damped-ETS/log-linear chosen by backtest; monthly forecasts only on 관세청 data | Prophet 12-month forecasts | ~10 annual points per series; Prophet needs sub-annual data | [03 §4](03_data_analysis.md#4-limitations-of-this-analysis) |
+| D20 | `WellGTM_Master_Plan.md` and `WellGTM_Infra_Architecture.md` are **superseded** and archived; scheduled ingestion and the Automation page become Must | Keep both | They contradict the PRD (mock data, hosting, embeddings, forecasting) | [Gap analysis](../gap_analysis_and_m1_plan.md) |
+| D21 | Hosting: **GitHub Pages** (frontend) + **GitHub Actions** (ingestion) + **HF Spaces** (API/agent) + **Supabase** (data) | Vercel + HF | Everything deploys from GitHub; GitHub can't host a long-running API | [Engineering plan §2](../engineering_plan.md#2-architecture) |
 
 ## 2. Assumptions register
 | ID | Assumption | Confidence | Validation plan |
@@ -48,3 +52,5 @@
 | R12 | Free public AI tools (aT ChaTi, KOTRA AI 수출비서) are seen as "good enough" | Medium | High | Differentiate on company-specific ranking, P(TOP3), corrections, monitoring; use public data as inputs; explore partnership | PM |
 | R13 | ROI scepticism among CPG buyers | High | Medium | ROI model + measured time savings + published evaluation | PM |
 | R14 | Personas and pains not validated (no interviews yet) | Certain (now) | High | Run the [09 §6](09_market_research_report.md#6-client-research-programme) programme before 본선 | PM |
+| R15 | GitHub disables cron after 60 days of repo inactivity; Supabase pauses after 7 idle days | Medium | High | Daily job keeps Supabase active; keepalive step re-enables workflows; Automation page shows a stale-data badge | Eng |
+| R16 | 관세청 API key or endpoint changes | Medium | Medium | Adapter skips cleanly without a key and logs `skipped`; other sources continue | Data |

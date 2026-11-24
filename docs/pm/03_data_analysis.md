@@ -158,6 +158,9 @@ India, Kazakhstan, Pakistan, Russia and Myanmar show very low Korean exports. Th
 4. Net weight (kg) is missing for some records, so volume CAGRs are indicative only.
 5. Annual data gives only ~10 points per series, so forecasting must use simple, backtested models (as planned) and show uncertainty bands.
 6. LPI is from 2023 only and is a coarse proxy for logistics ease.
+7. **CAGR base year.** The 5-year CAGRs start in 2020, a COVID year, so they are sensitive to that single point. The pipeline adds a log-linear slope over 2019–25 as a cross-check ([engineering plan §8](../engineering_plan.md#8-scoring-and-forecasting)).
+8. **Silent imputation.** `analyze.py` fills missing pillar values with the median without flagging them, which conflicts with DR-4. The pipeline keeps the same fill (so these numbers reproduce) but flags every imputed value.
+9. **Relative normalisation.** Min-max bounds come from the candidate set, so including or excluding hubs shifts every other country's score slightly. This is why the hub toggle changes more than the hubs' own rows.
 
 ---
 

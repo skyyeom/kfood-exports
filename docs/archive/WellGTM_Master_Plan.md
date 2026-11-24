@@ -1,3 +1,5 @@
+> **Superseded (2026-11-24).** This is the original draft. It is kept for history only and contradicts the current plan (mock data, hosting, embeddings, Prophet on annual data). Use the [PRD](../PRD.md), [engineering plan](../engineering_plan.md) and [gap analysis](../gap_analysis_and_m1_plan.md). See decision D20.
+
 # 🍦 WellGTM: Lotte Wellfood Market Intelligence Platform
 ## Master Development Blueprint & Proposal Artifacts (Lotte AX Challenge 2026)
 

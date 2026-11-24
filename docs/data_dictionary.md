@@ -1,0 +1,100 @@
+# WellGTM — Data Dictionary
+
+The tables are defined in `pipeline/db.py`. The SQL in `supabase/migrations/` is generated from those definitions. Every data table carries the provenance columns `source`, `retrieved_at` (UTC ISO-8601) and `run_id`. **Key** marks the natural key used for upserts and revision detection.
+
+## Data tables
+
+### `trade_flows`
+| Column | Type | Key | Notes |
+|---|---|---|---|
+| source | text | ✔ | `comtrade`, `kcs_monthly`, `lotte_field` (본선) |
+| reporter_iso3 | text | ✔ | Reporting country (`KOR` for Korea-reported exports) |
+| partner_iso3 | text | ✔ | `WLD` = world total |
+| flow | text | ✔ | `M` import, `X` export |
+| hs | text | ✔ | 4, 6 or 10 digits |
+| freq | text | ✔ | `A` annual, `M` monthly |
+| period | text | ✔ | `YYYY` or `YYYYMM` |
+| value_usd | float | | Imports are CIF, exports FOB |
+| net_kg | float | | Nullable; missing for some records (03 §4) |
+| imputed | bool | | Always false for raw source rows |
+| retrieved_at, run_id | | | Provenance |
+
+### `country_indicators`
+| Column | Type | Key | Notes |
+|---|---|---|---|
+| source | text | ✔ | `wdi`, `trends_snapshot`, … |
+| iso3 | text | ✔ | |
+| indicator | text | ✔ | e.g. `gdp_per_capita_usd`, `lpi_score` |
+| year | int | ✔ | |
+| value | float | | |
+| unit | text | | e.g. `USD`, `%`, `persons`, `score` |
+| source_code | text | | e.g. WDI code `NY.GDP.PCAP.CD` |
+| imputed | bool | | |
+| retrieved_at, run_id | | | |
+
+### `tariffs`
+| Column | Type | Key | Notes |
+|---|---|---|---|
+| source | text | ✔ | `wits`, `override` |
+| importer_iso3 | text | ✔ | |
+| hs | text | ✔ | |
+| rate_type | text | ✔ | `mfn`, `pref`, `additional` |
+| agreement | text | ✔ | e.g. `KORUS`, `RCEP`; empty string for MFN |
+| effective_from | text | ✔ | ISO date |
+| effective_to | text | | Nullable = still in force |
+| rate_pct | float | | Ad-valorem percentage |
+| source_url | text | | |
+| retrieved_at, run_id | | | |
+
+**Applied rate** = min(MFN, eligible preferential rate) + the sum of additional duties in force (for example, the US 15% reciprocal tariff on top of KORUS 0%).
+
+### `fx_rates`
+| Column | Type | Key | Notes |
+|---|---|---|---|
+| source | text | ✔ | |
+| date | text | ✔ | ISO date of the rate |
+| base | text | ✔ | `USD` |
+| quote | text | ✔ | ISO 4217 |
+| rate | float | | Units of quote per 1 base |
+| retrieved_at, run_id | | | |
+
+### `commodity_prices`
+| Column | Type | Key | Notes |
+|---|---|---|---|
+| source | text | ✔ | `pinksheet` |
+| commodity | text | ✔ | `cocoa`, `sugar_world`, `wheat_us_hrw`, `palm_oil` |
+| month | text | ✔ | `YYYY-MM` |
+| price | float | | |
+| unit | text | | e.g. `USD/kg`, `USD/mt` |
+| retrieved_at, run_id | | | |
+
+### `reg_documents` (M4)
+`doc_id` (key), `country_iso3`, `title`, `url`, `content_hash`, `version`, `fetched_at`, `run_id`.
+
+## Automation tables
+
+### `ingest_runs`
+| Column | Type | Notes |
+|---|---|---|
+| run_id | text (uuid) | Primary key |
+| source | text | |
+| trigger | text | `schedule`, `manual`, `ci`, `local` |
+| status | text | `running`, `success`, `failed`, `skipped` |
+| started_at, finished_at | text | UTC ISO |
+| rows_fetched, rows_inserted, rows_updated, rows_unchanged, rows_invalid | int | |
+| error | text | Nullable |
+| ci_run_url | text | Link to the GitHub Actions run |
+
+### `ingest_events`
+`id` (autoincrement), `run_id`, `ts`, `step` (`start`, `fetch`, `validate`, `upsert`, `rerank`, `finish`), `status` (`ok`, `error`, `skipped`), `message`, `metrics` (JSON).
+
+### `data_revisions`
+`id`, `run_id`, `table_name`, `row_key` (JSON of the natural key), `field`, `old_value`, `new_value`, `detected_at`. One row per changed field.
+
+### `ranking_snapshots`
+`id`, `run_id`, `computed_at`, `category` (`all` or an HS code), `preset`, `payload` (JSON: per-country pillars, score, rank, P(TOP3) for both weight models, imputed flags, hub flag).
+
+## Access (RLS)
+- `anon`: `select` on every table above.
+- `service_role` (pipeline): all writes.
+- User tables (watchlists, alerts; M5): owner-only.

@@ -9,6 +9,8 @@ Read in order:
 | 02 | [Market analysis](02_market_analysis.md) | K-food export context, Lotte Wellfood's position, competitors, trends, regulation, TAM/SAM/SOM |
 | 03 | [Data analysis](03_data_analysis.md) | What real trade and macro data says, where it misleads, preliminary TOP3 hypothesis |
 | — | [**PRD**](../PRD.md) | Goals, metrics, scope, requirements, guardrails, release plan |
+| — | [Engineering plan](../engineering_plan.md) · [Data dictionary](../data_dictionary.md) | Architecture, sources, ingestion, API, dashboard pages, tables |
+| — | [Gap analysis & M1 plan](../gap_analysis_and_m1_plan.md) | What was missing from the plan and how it was fixed |
 | 04 | [User stories](04_user_stories.md) | Backlog with acceptance criteria, priority and size |
 | 05 | [Roadmap](05_roadmap.md) | Milestones, critical path, scope-cut order, judge demo script |
 | 06 | [Metrics & evaluation](06_metrics_and_evaluation.md) | Metric tree, evaluation assets, definitions |
