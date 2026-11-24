@@ -164,3 +164,19 @@ def test_pinksheet_source_tolerates_blank_unit_cells_and_padded_names(tmp_path):
     rows = PinkSheetSource().fetch(http).set_index(["commodity", "month"])
 
     assert rows.loc[("cocoa", "2026-10"), "price"] == 5.75
+
+
+def test_tariff_source_sends_three_digit_country_codes(tmp_path):
+    http = RecordedHttp((WITS + "076/", {}, "wits_no_records.txt"), (WITS + "036/", {}, "wits_no_records.txt"))
+
+    rows = TariffSource(countries=["BRA", "AUS"], overrides_file=tmp_path / "none.yaml").fetch(http)
+
+    assert rows.empty  # both requests matched the zero-padded routes
+
+
+def test_tariff_source_treats_a_404_for_one_country_as_no_rows(tmp_path):
+    http = RecordedHttp((WITS + "643/", {}, None), (WITS + "840/", {}, "wits_trn_usa.xml"))
+
+    rows = TariffSource(countries=["RUS", "USA"], overrides_file=tmp_path / "none.yaml").fetch(http)
+
+    assert set(rows.importer_iso3) == {"USA"}

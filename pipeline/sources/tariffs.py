@@ -10,6 +10,7 @@ import pandas as pd
 import yaml
 
 from pipeline.config import CANDIDATES, HS6, wits_code
+from pipeline.http import NotFound
 
 URL = "https://wits.worldbank.org/API/V1/SDMX/V21/datasource/TRN/reporter/{code}/partner/000/product/{products}/year/{years}/datatype/reported"
 OVERRIDES = Path(__file__).resolve().parents[1] / "tariff_overrides.yaml"
@@ -29,8 +30,12 @@ class TariffSource:
         products = ";".join(p for lines in HS6.values() for p in lines)
         rows = []
         for iso in self.countries:
-            url = URL.format(code=wits_code(iso), products=products, years=";".join(map(str, self.years)))
-            rows += self._latest_mfn(iso, url, http.get(url))
+            url = URL.format(code=f"{wits_code(iso):03d}", products=products, years=";".join(map(str, self.years)))
+            try:
+                body = http.get(url)
+            except NotFound:  # WITS answers 404 for a reporter with no data in these years
+                continue
+            rows += self._latest_mfn(iso, url, body)
         return pd.DataFrame(rows + self._overrides())
 
     def _latest_mfn(self, iso: str, url: str, body: bytes) -> list[dict]:

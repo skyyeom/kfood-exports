@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from pipeline.http import Http
+from pipeline.http import Http, NotFound
 
 
 class Upstream:
@@ -39,3 +39,8 @@ def test_errors_never_include_query_strings_which_may_hold_api_keys():
     with pytest.raises(RuntimeError) as e:
         client(Upstream(403)).get("https://api.example/x", params={"serviceKey": "SECRET"})
     assert "SECRET" not in str(e.value) and "403" in str(e.value)
+
+
+def test_404_is_reported_as_not_found_so_sources_can_treat_it_as_no_data():
+    with pytest.raises(NotFound):
+        client(Upstream(404)).get("https://api.example/x")

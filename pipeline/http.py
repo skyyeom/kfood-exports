@@ -10,6 +10,10 @@ import requests
 RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
+class NotFound(RuntimeError):
+    """HTTP 404. Some APIs (e.g. WITS) answer 404 when a query simply has no data."""
+
+
 def _without_query(url: str) -> str:
     return url.split("?", 1)[0]
 
@@ -33,6 +37,8 @@ class Http:
             if r.status_code in RETRY_STATUS:
                 last = f"HTTP {r.status_code}"
                 continue
+            if r.status_code == 404:
+                raise NotFound(f"HTTP 404 from {_without_query(url)}")
             if r.status_code >= 400:
                 raise RuntimeError(f"HTTP {r.status_code} from {_without_query(url)}")
             self.sleep(self.pause)  # stay polite to keyless public APIs
