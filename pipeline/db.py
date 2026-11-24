@@ -115,7 +115,7 @@ DATA_TABLES = {t.name: t for t in (trade_flows, country_indicators, tariffs, fx_
 
 
 def now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 @dataclass
@@ -130,15 +130,22 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return df.astype(object).where(df.notna(), None).to_dict(orient="records")
 
 
-def _same(a, b) -> bool:
+def _coerce_rows(t: sa.Table, df: pd.DataFrame) -> list[dict]:
+    """Rows restricted to the table's columns, each value cast to its column's Python type."""
+    cols = [c for c in df.columns if c in t.c]
+    types = {c: t.c[c].type.python_type for c in cols}
+    return [{c: None if v is None else types[c](v) for c, v in row.items()} for row in _records(df[cols])]
+
+
+def _values_equal(a, b) -> bool:
     if a is None or b is None:
         return a is None and b is None
-    if isinstance(a, float) or isinstance(b, float):
+    if isinstance(a, float) and isinstance(b, float):
         return math.isclose(a, b, rel_tol=1e-12, abs_tol=0.0)
     return a == b
 
 
-def _text(v) -> str | None:
+def _as_text(v) -> str | None:
     return None if v is None else str(v)
 
 
@@ -183,24 +190,35 @@ class Store:
             )
 
     def upsert(self, table: str, df: pd.DataFrame, run_id: str) -> UpsertResult:
-        """Insert new rows and update changed ones, matched on the table's natural key. Unchanged rows are untouched."""
+        """Insert new rows and update changed ones, matched on the table's natural key.
+
+        Unchanged rows are untouched, so they keep the run_id and retrieved_at of the run that last changed them.
+        Only columns present in the payload are compared and updated.
+        """
+        if df.empty:
+            return UpsertResult(0, 0, 0)
         t = DATA_TABLES[table]
         keys = [c.name for c in t.primary_key.columns]
-        values = [c.name for c in t.columns if c.name not in keys and c.name not in ("retrieved_at", "run_id")]
+        if missing := [k for k in keys if k not in df.columns]:
+            raise ValueError(f"{table} payload is missing key columns {missing}")
+        values = [c for c in df.columns if c in t.c and c not in keys and c not in ("retrieved_at", "run_id")]
+        rows = _coerce_rows(t, df)
+        by_key = {tuple(r[k] for k in keys): r for r in rows}
+        if len(by_key) < len(rows):
+            raise ValueError(f"{table} payload has {len(rows) - len(by_key)} duplicate natural keys")
         stamp = {"retrieved_at": now(), "run_id": run_id}
         with self.engine.begin() as c:
-            sources = df["source"].unique().tolist()
+            sources = sorted({r["source"] for r in rows})
             existing = {
                 tuple(r[k] for k in keys): r for r in c.execute(t.select().where(t.c.source.in_(sources))).mappings()
             }
             new, changed, revisions = [], [], []
-            for row in _records(df):
-                row = {col: row.get(col) for col in keys + values}
-                old = existing.get(tuple(row[k] for k in keys))
+            for key, row in by_key.items():
+                old = existing.get(key)
                 if old is None:
                     new.append(row | stamp)
                     continue
-                diffs = [v for v in values if not _same(old[v], row[v])]
+                diffs = [v for v in values if not _values_equal(old[v], row[v])]
                 if diffs:
                     changed.append(row)
                     row_key = {k: row[k] for k in keys}
@@ -210,8 +228,8 @@ class Store:
                             "table_name": table,
                             "row_key": row_key,
                             "field": v,
-                            "old_value": _text(old[v]),
-                            "new_value": _text(row[v]),
+                            "old_value": _as_text(old[v]),
+                            "new_value": _as_text(row[v]),
                             "detected_at": stamp["retrieved_at"],
                         }
                         for v in diffs
@@ -224,7 +242,7 @@ class Store:
                 )
             if revisions:
                 c.execute(data_revisions.insert(), revisions)
-        return UpsertResult(len(new), len(changed), len(df) - len(new) - len(changed))
+        return UpsertResult(len(new), len(changed), len(rows) - len(new) - len(changed))
 
     def runs(self) -> pd.DataFrame:
         with self.engine.connect() as c:
@@ -238,7 +256,9 @@ class Store:
 
     def revisions(self, run_id: str) -> pd.DataFrame:
         with self.engine.connect() as c:
-            return pd.read_sql(data_revisions.select().where(data_revisions.c.run_id == run_id), c)
+            return pd.read_sql(
+                data_revisions.select().where(data_revisions.c.run_id == run_id).order_by(data_revisions.c.id), c
+            )
 
     def read(self, table: str) -> pd.DataFrame:
         with self.engine.connect() as c:

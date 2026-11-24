@@ -1,6 +1,9 @@
 # WellGTM — Data Dictionary
 
-The tables are defined in `pipeline/db.py`. The SQL in `supabase/migrations/` is generated from those definitions. Every data table carries the provenance columns `source`, `retrieved_at` (UTC ISO-8601) and `run_id`. **Key** marks the natural key used for upserts and revision detection.
+The tables are defined in `pipeline/db.py`. The SQL in `supabase/migrations/` is generated from those definitions. Every data table carries the provenance columns `source`, `retrieved_at` (UTC ISO-8601, milliseconds) and `run_id`. **Key** marks the natural key used for upserts and revision detection.
+
+- `retrieved_at` and `run_id` identify the run that **last changed** a row. Re-fetching an unchanged value leaves both alone, so "data as of" per source comes from the latest successful `ingest_runs.finished_at`.
+- A payload must contain every key column and no duplicate keys, or the run fails without writing. Value columns absent from a payload are left unchanged.
 
 ## Data tables
 

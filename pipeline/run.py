@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 
 import pandas as pd
 
-from pipeline.db import Store
+from pipeline.db import Store, UpsertResult
 
 
 class Source(Protocol):
@@ -27,35 +27,31 @@ class RunResult:
     unchanged: int = 0
 
 
+def _row_counts(changes: UpsertResult) -> dict[str, int]:
+    return {f"rows_{k}": v for k, v in asdict(changes).items()}
+
+
 def run_sources(sources: list[Source], store: Store, http: Any, trigger: str = "local") -> list[RunResult]:
     results = []
     for source in sources:
         run_id = store.start_run(source.name, trigger)
         store.log_event(run_id, "start")
-        step = "fetch"
+        step, fetched = "fetch", None
         try:
             df = source.fetch(http)
-            store.log_event(run_id, "fetch", metrics={"rows": len(df)})
+            fetched = len(df)
+            store.log_event(run_id, "fetch", metrics={"rows": fetched})
             step = "upsert"
-            up = store.upsert(source.table, df, run_id)
-            store.log_event(
-                run_id, "upsert", metrics={"inserted": up.inserted, "updated": up.updated, "unchanged": up.unchanged}
-            )
+            changes = store.upsert(source.table, df, run_id)
+            store.log_event(run_id, "upsert", metrics=asdict(changes))
         except Exception as e:  # noqa: BLE001 — one failing source must not stop the others
             error = f"{type(e).__name__}: {e}"
             store.log_event(run_id, step, "error", message=error)
             store.log_event(run_id, "finish", "error")
-            store.finish_run(run_id, "failed", error=error)
+            store.finish_run(run_id, "failed", error=error, rows_fetched=fetched)
             results.append(RunResult(source.name, run_id, "failed"))
             continue
         store.log_event(run_id, "finish")
-        store.finish_run(
-            run_id,
-            "success",
-            rows_fetched=len(df),
-            rows_inserted=up.inserted,
-            rows_updated=up.updated,
-            rows_unchanged=up.unchanged,
-        )
-        results.append(RunResult(source.name, run_id, "success", up.inserted, up.updated, up.unchanged))
+        store.finish_run(run_id, "success", rows_fetched=fetched, **_row_counts(changes))
+        results.append(RunResult(source.name, run_id, "success", **asdict(changes)))
     return results
