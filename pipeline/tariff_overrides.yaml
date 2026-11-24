@@ -1,0 +1,19 @@
+# Dated tariff overrides that WITS does not carry: FTA preferential rates and additional duties.
+# Applied rate = min(MFN, eligible preferential rate) + additional duties in force (docs/data_dictionary.md).
+# Every entry needs a source. Edit this file to change policy; the weekly run records the revision.
+
+- importer_iso3: USA
+  hs: ["1704", "1806", "1905", "2105"]
+  rate_type: pref
+  agreement: KORUS
+  rate_pct: 0
+  effective_from: 2012-03-15
+  source_url: https://ustr.gov/trade-agreements/free-trade-agreements/korus-fta
+
+- importer_iso3: USA
+  hs: ["1704", "1806", "1905", "2105"]
+  rate_type: additional
+  agreement: US reciprocal tariff
+  rate_pct: 15
+  effective_from: 2025-08-07  # 02_market_analysis.md §6 [R1]; confirm the exact date against the USTR fact sheet
+  source_url: https://ustr.gov

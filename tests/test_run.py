@@ -1,10 +1,16 @@
+import json
 import os
+import zipfile
 
 import pandas as pd
 import pytest
+from fakes import FIXTURES, RecordedHttp
 
 from pipeline.db import Store, metadata
+from pipeline.raw import LocalRawStore
 from pipeline.run import run_sources
+from pipeline.sources.fx import FxSource
+from pipeline.sources.kcs_monthly import KcsMonthlySource
 
 
 class StaticSource:
@@ -105,6 +111,7 @@ def test_successful_run_records_each_step_for_the_live_feed(store):
     assert events[["step", "status"]].values.tolist() == [
         ["start", "ok"],
         ["fetch", "ok"],
+        ["validate", "ok"],
         ["upsert", "ok"],
         ["finish", "ok"],
     ]
@@ -187,3 +194,46 @@ def test_values_are_coerced_to_column_types_so_reruns_match(store):
     [second] = run_sources([StaticSource("wdi", "country_indicators", payload)], store, http=None)
 
     assert (second.status, second.inserted, second.updated, second.unchanged) == ("success", 0, 0, 1)
+
+
+def test_invalid_rows_are_rejected_and_counted_while_valid_rows_load(store):
+    rows = fx_rows() + [
+        {"source": "fx", "date": "2026-11-24", "base": "USD", "quote": "PHP", "rate": 58.1},
+        {"source": "fx", "date": "2026-11-24", "base": "USD", "quote": "THB", "rate": 33.0},
+        {"source": "fx", "date": "2026-11-24", "base": "USD", "quote": "XXX", "rate": -1.0},
+    ]
+
+    [result] = run_sources([StaticSource("fx", "fx_rates", rows)], store, http=None)
+
+    assert (result.status, result.inserted) == ("success", 4)
+    assert store.runs().rows_invalid.iloc[0] == 1
+    assert store.events(result.run_id).set_index("step").loc["validate", "metrics"]["invalid"] == 1
+
+
+def test_run_fails_when_more_than_a_fifth_of_rows_are_invalid(store):
+    rows = fx_rows() + [{"source": "fx", "date": "not-a-date", "base": "USD", "quote": "PHP", "rate": 58.1}]
+
+    [result] = run_sources([StaticSource("fx", "fx_rates", rows)], store, http=None)
+
+    assert result.status == "failed"
+    assert store.read("fx_rates").empty
+
+
+def test_source_without_its_api_key_is_skipped_not_failed(store):
+    [result] = run_sources([KcsMonthlySource(api_key="")], store, http=None)
+
+    assert result.status == "skipped"
+    fetch = store.events(result.run_id).set_index("step").loc["fetch"]
+    assert fetch.status == "skipped" and "KCS_API_KEY" in fetch.message
+
+
+def test_raw_upstream_responses_are_archived_per_run(store, tmp_path):
+    http = RecordedHttp(("https://open.er-api.com/v6/latest/USD", {}, "fx_open_er_api.json"))
+    raw = LocalRawStore(tmp_path)
+
+    [result] = run_sources([FxSource()], store, http=http, raw_store=raw)
+
+    with zipfile.ZipFile(tmp_path / "raw" / "fx" / f"{result.run_id}.zip") as z:
+        manifest = json.loads(z.read("manifest.json"))
+        assert manifest[0]["url"] == "https://open.er-api.com/v6/latest/USD"
+        assert z.read(manifest[0]["file"]) == (FIXTURES / "fx_open_er_api.json").read_bytes()
