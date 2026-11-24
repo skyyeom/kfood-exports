@@ -335,3 +335,24 @@ def test_unchanged_data_does_not_rerank(store):
 )
 def test_supabase_connection_strings_use_the_installed_psycopg_driver(url):
     assert Store(url).engine.url.drivername == "postgresql+psycopg"
+
+
+def test_ranking_waits_for_korea_exports_instead_of_failing(store):
+    trade, indicators = load_tables()
+    imports_only = StaticSource("comtrade", "trade_flows", trade[trade.flow == "M"])
+
+    [comtrade, _] = run_sources([imports_only, StaticSource("wdi", "country_indicators", indicators)], store, None)
+
+    assert comtrade.status == "success"
+    assert store.latest_ranking() == []
+
+
+def test_data_without_a_current_ranking_is_ranked_on_the_next_run_even_if_unchanged(store):
+    trade, indicators = load_tables()
+    seed = store.start_run("seed")
+    store.upsert("trade_flows", trade, seed)
+    store.upsert("country_indicators", indicators, seed)
+
+    run_sources([StaticSource("wdi", "country_indicators", indicators)], store, http=None)
+
+    assert [c["iso3"] for c in store.latest_ranking()[:3]] == ["USA", "CHN", "PHL"]

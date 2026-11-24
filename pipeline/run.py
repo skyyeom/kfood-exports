@@ -19,7 +19,7 @@ import pandas as pd
 
 from pipeline.db import Store, UpsertResult
 from pipeline.http import Http
-from pipeline.indicators import rankings
+from pipeline.indicators import InsufficientData, rankings
 from pipeline.raw import LocalRawStore, RecordingHttp, SupabaseRawStore
 from pipeline.schema import validate
 from pipeline.sources import SOURCES
@@ -50,15 +50,16 @@ def _row_counts(changes: UpsertResult) -> dict[str, int]:
     return {f"rows_{k}": v for k, v in asdict(changes).items()}
 
 
-def _rerank(store: Store, run_id: str, changed: bool) -> None:
-    if not changed:
+def _rerank(store: Store, run_id: str) -> None:
+    """Re-rank when scoring inputs changed since the last ranking, so a ranking missed earlier is caught up."""
+    if not store.ranking_is_stale():
         store.log_event(run_id, "rerank", "skipped", message="no trade or macro data changed")
         return
-    trade, indicators = store.read("trade_flows"), store.read("country_indicators")
-    if trade.empty or indicators.empty:
-        store.log_event(run_id, "rerank", "skipped", message="waiting for both trade and macro data")
+    try:
+        by_category = rankings(store.read("trade_flows"), store.read("country_indicators"))
+    except InsufficientData as e:
+        store.log_event(run_id, "rerank", "skipped", message=str(e))
         return
-    by_category = rankings(trade, indicators)
     for category, rows in by_category.items():
         store.save_ranking(run_id, category, "corrected", "default", rows)
     top3 = [r["iso3"] for r in by_category["all"][:3]]
@@ -103,7 +104,7 @@ def run_sources(
             store.log_event(run_id, "upsert", metrics=asdict(changes))
             if source.table in RANKING_INPUTS:
                 step = "rerank"
-                _rerank(store, run_id, changed=bool(changes.inserted or changes.updated))
+                _rerank(store, run_id)
         except SkipSource as e:
             store.log_event(run_id, step, "skipped", message=str(e))
             store.log_event(run_id, "finish", "skipped")
@@ -159,7 +160,11 @@ def main(argv: list[str] | None = None, env=None, http: Any = None) -> int:
     if url.startswith("sqlite:///"):
         Path(url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
     store = Store(url)
-    store.create_all()
+    if url.startswith("sqlite"):
+        store.create_all()
+    elif not store.is_migrated():  # never create tables on Postgres here: they would have no RLS policies
+        print("Database has no WellGTM tables. Run supabase/migrations/0001_init.sql first.", file=sys.stderr)
+        return 3
     trigger, ci_run_url = _trigger(env)
     results = run_sources([SOURCES[n]() for n in names], store, http or Http(), trigger, _raw_store(env), ci_run_url)
     for r in results:

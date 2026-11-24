@@ -50,7 +50,12 @@ class SupabaseRawStore:
         self.base, self.bucket = url.rstrip("/"), bucket
         self.session = requests.Session()
         self.session.headers.update(
-            {"Authorization": f"Bearer {service_key}", "x-upsert": "true", "Content-Type": "application/zip"}
+            {
+                "Authorization": f"Bearer {service_key}",
+                "apikey": service_key,
+                "x-upsert": "true",
+                "Content-Type": "application/zip",
+            }
         )
 
     def put(self, key: str, data: bytes) -> str:

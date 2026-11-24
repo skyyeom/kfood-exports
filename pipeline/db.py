@@ -190,6 +190,10 @@ class Store:
     def create_all(self) -> None:
         metadata.create_all(self.engine)
 
+    def is_migrated(self) -> bool:
+        tables = set(sa.inspect(self.engine).get_table_names())
+        return all(t in tables for t in metadata.tables)
+
     def start_run(self, source: str, trigger: str = "local", ci_run_url: str | None = None) -> str:
         run_id = str(uuid.uuid4())
         with self.engine.begin() as c:
@@ -298,6 +302,15 @@ class Store:
             row = c.execute(q).mappings().first()
         return row["payload"] if row else []
 
+    def ranking_is_stale(self, inputs: tuple[str, ...] = ("trade_flows", "country_indicators")) -> bool:
+        """True when scoring inputs changed after the latest ranking was computed (or no ranking exists yet)."""
+        with self.engine.connect() as c:
+            changed = max(
+                (c.execute(sa.select(sa.func.max(DATA_TABLES[t].c.retrieved_at))).scalar() or "") for t in inputs
+            )
+            ranked = c.execute(sa.select(sa.func.max(ranking_snapshots.c.computed_at))).scalar() or ""
+        return bool(changed) and changed > ranked
+
     def runs(self) -> pd.DataFrame:
         with self.engine.connect() as c:
             return pd.read_sql(ingest_runs.select().order_by(ingest_runs.c.started_at), c)
@@ -331,9 +344,12 @@ def migration_sql() -> str:
     parts.append("-- Row-level security: public read for the dashboard; writes only via the service role.")
     for t in metadata.sorted_tables:
         parts.append(f"alter table {t.name} enable row level security;")
+        parts.append(f'drop policy if exists "public read" on {t.name};')
         parts.append(f'create policy "public read" on {t.name} for select to anon, authenticated using (true);')
     parts.append("\n-- Live run feed on the Automation page (Supabase Realtime).")
-    parts.append("alter publication supabase_realtime add table ingest_runs, ingest_events;")
+    parts.append("do $$ begin")
+    parts.append("  alter publication supabase_realtime add table ingest_runs, ingest_events;")
+    parts.append("exception when duplicate_object then null; end $$;")
     parts.append("\n-- Private bucket for raw upstream responses (raw/{source}/{run_id}.zip).")
     parts.append("insert into storage.buckets (id, name, public) values ('raw', 'raw', false) on conflict do nothing;")
     return "\n".join(parts) + "\n"

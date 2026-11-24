@@ -120,26 +120,37 @@ CREATE TABLE IF NOT EXISTS trade_flows (
 
 -- Row-level security: public read for the dashboard; writes only via the service role.
 alter table commodity_prices enable row level security;
+drop policy if exists "public read" on commodity_prices;
 create policy "public read" on commodity_prices for select to anon, authenticated using (true);
 alter table country_indicators enable row level security;
+drop policy if exists "public read" on country_indicators;
 create policy "public read" on country_indicators for select to anon, authenticated using (true);
 alter table data_revisions enable row level security;
+drop policy if exists "public read" on data_revisions;
 create policy "public read" on data_revisions for select to anon, authenticated using (true);
 alter table fx_rates enable row level security;
+drop policy if exists "public read" on fx_rates;
 create policy "public read" on fx_rates for select to anon, authenticated using (true);
 alter table ingest_events enable row level security;
+drop policy if exists "public read" on ingest_events;
 create policy "public read" on ingest_events for select to anon, authenticated using (true);
 alter table ingest_runs enable row level security;
+drop policy if exists "public read" on ingest_runs;
 create policy "public read" on ingest_runs for select to anon, authenticated using (true);
 alter table ranking_snapshots enable row level security;
+drop policy if exists "public read" on ranking_snapshots;
 create policy "public read" on ranking_snapshots for select to anon, authenticated using (true);
 alter table tariffs enable row level security;
+drop policy if exists "public read" on tariffs;
 create policy "public read" on tariffs for select to anon, authenticated using (true);
 alter table trade_flows enable row level security;
+drop policy if exists "public read" on trade_flows;
 create policy "public read" on trade_flows for select to anon, authenticated using (true);
 
 -- Live run feed on the Automation page (Supabase Realtime).
-alter publication supabase_realtime add table ingest_runs, ingest_events;
+do $$ begin
+  alter publication supabase_realtime add table ingest_runs, ingest_events;
+exception when duplicate_object then null; end $$;
 
 -- Private bucket for raw upstream responses (raw/{source}/{run_id}.zip).
 insert into storage.buckets (id, name, public) values ('raw', 'raw', false) on conflict do nothing;

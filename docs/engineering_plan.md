@@ -92,12 +92,12 @@ Each `python -m pipeline.run --source X` executes these steps. Each step writes 
 2. **fetch**: call the source adapter → DataFrame. Every upstream response is archived to Supabase Storage at `raw/{source}/{run_id}.zip` (a manifest plus the response bodies; request headers are never stored), including when the fetch fails partway.
 3. **validate**: pandera schema for the target table. Failing rows are counted and dropped; if more than 20% fail, the run fails.
 4. **upsert**: compare against existing rows by natural key → insert new rows, update changed rows, and write one `data_revisions` row per changed field. Unchanged rows are left alone, so re-runs are idempotent.
-5. **rerank**: if any data changed, recompute pillars, scores and P(TOP3) for each category × preset and insert a `ranking_snapshots` row.
+5. **rerank**: for trade and macro sources, if the scoring inputs changed after the latest ranking (so a ranking missed by an earlier run is caught up), recompute pillars, scores and P(TOP3) for each category and insert `ranking_snapshots` rows. Tariffs, FX and commodity prices are not scored yet, so they don't trigger it. If the inputs aren't complete yet (e.g. no Korea-reported exports), the step is logged as skipped.
 6. **finish**: set the status, counts and duration. If a source fails, its run is marked failed and the next source continues. The job exits non-zero so GitHub shows it red.
 
 Steps 7–8 arrive in M5: anomaly detection on the changed rows, then email.
 
-**Schedules:** `ingest-daily.yml` at 17:00 UTC (02:00 KST): fx, regulation. `ingest-weekly.yml` on Monday: comtrade, wdi, kcs_monthly, tariffs. `ingest-monthly.yml` on the 5th: pinksheet. All three accept `workflow_dispatch` with a `source` input.
+**Schedules** (cron is in UTC): `ingest-daily.yml` at 02:00 KST: fx (regulation pages join in M4). `ingest-weekly.yml` at 03:00 KST on Tuesdays (Monday 18:00 UTC): comtrade, wdi, tariffs, kcs_monthly. `ingest-monthly.yml` at 04:00 KST on the 6th: pinksheet. All three call the reusable `_ingest.yml` and accept `workflow_dispatch` with a `source` input.
 
 **Keeping schedules alive:** GitHub disables schedules after 60 days with no repo activity, so a keepalive step uses the API to re-enable the workflow. Supabase pauses free projects after 7 days idle; the daily job prevents that.
 
@@ -142,6 +142,7 @@ The agent chat is a right-hand panel on pages 1–5.
 - Only public data in 예선 (PRD §10).
 
 ## 10. Testing
+- `analysis/analyze.py` stays frozen as the independent reference. The pipeline is tested against its outputs, so it must not import the pipeline (that would make the reproduction test pass by construction).
 - **pytest:**
   - source adapters, tested with recorded responses;
   - validation;

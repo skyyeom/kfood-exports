@@ -141,7 +141,8 @@ The test seams are confirmed before any tests are written. The proposed seams ar
 - `.github/workflows/ingest-{daily,weekly,monthly}.yml` (cron + `workflow_dispatch`) and `ci.yml` (pytest + ruff).
 
 ## Verification
-- `pytest` passes, including a fixture-based test showing that `pipeline` reproduces the `analysis/output/t7` and `t11` scores and P(TOP3) within ±1%. That is the M1 exit criterion.
+- `pytest` passes, including a fixture-based test showing that `pipeline` reproduces the `analysis/output/t7` and `t11` scores and pillars within ±1%, and P(TOP3) within ±0.03 (the Monte Carlo noise of 5,000 draws). That is the M1 exit criterion.
+- `analysis/analyze.py` stays frozen as the independent reference rather than becoming a thin caller: if it called the pipeline, the reproduction test would pass by construction.
 - A live run of `python -m pipeline.run --source fx` against a test Postgres writes `ingest_runs` and `ingest_events` rows and upserts the data. Running it a second time adds no rows and no revisions, which shows the run is idempotent.
 - Triggering `ingest-daily.yml` by `workflow_dispatch` on GitHub writes a run row to Supabase.
 - Forcing one source to fail (a bad URL) still lets the other sources complete, and the failure is logged.

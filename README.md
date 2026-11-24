@@ -20,14 +20,14 @@ A dashboard and AI agent that ranks export markets for Lotte Wellfood's confecti
 
 ## Run the pipeline locally
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # Python 3.12+
 .venv/bin/python -m pipeline.run --source fx          # one source; or --all
 .venv/bin/pytest -q
 ```
 Without `DATABASE_URL`, data goes to `data/local.db` (SQLite) and raw responses to `data/raw/`.
 
 ## Turn on the automation (one-time setup)
-1. Create a free Supabase project. In the SQL editor, run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql). It creates the tables, read-only RLS policies, the Realtime feed and the private `raw` bucket.
+1. Create a free Supabase project. **Before any workflow runs**, open the SQL editor and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql). It creates the tables, read-only RLS policies, the Realtime feed and the private `raw` bucket.
 2. In GitHub → Settings → Secrets and variables → Actions, add:
 
 | Secret | Value |
@@ -38,7 +38,7 @@ Without `DATABASE_URL`, data goes to `data/local.db` (SQLite) and raw responses 
 | `COMTRADE_API_KEY` | Optional. A free key from comtradeplus.un.org lifts the 500-row preview cap |
 | `KCS_API_KEY` | Optional. A data.go.kr key for 관세청 monthly exports; without it that source is logged as skipped |
 
-3. Run each workflow once from the Actions tab (**Ingest (daily / weekly / monthly)** → Run workflow). Every run appears in `ingest_runs` with a link back to its GitHub job.
+3. Run each workflow once from the Actions tab (**Ingest (daily / weekly / monthly)** → Run workflow). Every run appears in `ingest_runs` with a link back to its GitHub job. The pipeline refuses to run against a database without these tables, rather than create tables that have no RLS.
 
 | Workflow | Schedule (KST) | Sources |
 |---|---|---|

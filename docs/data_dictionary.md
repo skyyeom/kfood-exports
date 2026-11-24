@@ -97,7 +97,9 @@ WITS MFN rows are per HS6 line; overrides may be given at HS4, in which case the
 `id`, `run_id`, `table_name`, `row_key` (JSON of the natural key), `field`, `old_value`, `new_value`, `detected_at`. One row per changed field.
 
 ### `ranking_snapshots`
-`id`, `run_id`, `computed_at`, `category` (`all` or an HS code), `preset`, `payload` (JSON: per-country pillars, score, rank, P(TOP3) for both weight models, imputed flags, hub flag).
+`id`, `run_id`, `computed_at`, `category` (`all` or an HS code), `variant` (`corrected`: volume growth, hubs excluded; `naive` reserved for the FR-1.6 toggle), `preset` (`default` until M2 presets), `payload`.
+
+`payload` is a JSON list ordered by rank, one object per country: `iso3`, `rank`, `score`, the four pillar values, `top3_probability` (±20% weights), `top3_prob_random_weights` (Dirichlet), `imputed_pillars` (pillars filled with the median), `missing_indicators` (indicators absent inside a pillar), `latest_year` (data year of the import figures) and `hub`.
 
 ## Access (RLS)
 - `anon`: `select` on every table above.

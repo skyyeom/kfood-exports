@@ -29,18 +29,33 @@ def loglinear_growth(values: pd.Series) -> float:
     return float(np.exp(slope) - 1)
 
 
+def covered_until(rows: pd.DataFrame, share: float = 0.9) -> int | None:
+    """Latest year reported by at least `share` of the countries that report the indicator at all."""
+    if rows.empty:
+        return None
+    per_year = rows.groupby("year").iso3.nunique()
+    return int(per_year[per_year >= share * rows.iso3.nunique()].index.max())
+
+
+class InsufficientData(Exception):
+    """Not enough data yet to score (e.g. trade loaded but no Korea-reported exports)."""
+
+
 def build_features(trade: pd.DataFrame, indicators: pd.DataFrame, hs: list[str] = HS) -> pd.DataFrame:
     """One row per candidate country with every indicator the screen uses, for the given HS category codes."""
     t = trade[(trade.freq == "A") & trade.hs.isin(hs)].assign(year=lambda d: d.period.astype(int))
     imports = t[(t.flow == "M") & (t.partner_iso3 == "WLD")]
     from_kr = t[(t.flow == "M") & (t.partner_iso3 == "KOR")]
-    kr = t[(t.flow == "X") & (t.reporter_iso3 == "KOR")]
+    kr = t[(t.flow == "X") & (t.reporter_iso3 == "KOR") & (t.partner_iso3 != "WLD")]
+    if kr.empty or imports.empty or indicators.empty:
+        raise InsufficientData("needs partner imports, Korea-reported exports and macro indicators")
 
     # Korea-reported exports by destination
-    kr_tot = kr[kr.partner_iso3 != "WLD"].groupby(["partner_iso3", "year"]).value_usd.sum().unstack()
+    kr_tot = kr.groupby(["partner_iso3", "year"]).value_usd.sum().unstack()
     last = int(kr.year.max())
+    base = kr_tot.get(last - 5, pd.Series(np.nan, index=kr_tot.index))
     f = pd.DataFrame({"kr_exports_latest_musd": kr_tot[last] / 1e6})
-    f["kr_export_cagr_5y"] = [cagr(a, b, 5) for a, b in zip(kr_tot.get(last - 5), kr_tot[last], strict=True)]
+    f["kr_export_cagr_5y"] = [cagr(a, b, 5) for a, b in zip(base, kr_tot[last], strict=True)]
     f["kr_export_growth_loglinear"] = kr_tot.loc[:, last - 6 : last].apply(loglinear_growth, axis=1)
 
     # Destination market size and growth, at each country's latest year with all four HS codes reported
@@ -81,13 +96,18 @@ def build_features(trade: pd.DataFrame, indicators: pd.DataFrame, hs: list[str] 
             "lpi_score": latest("lpi_score"),
         }
     )
-    g = indicators[(indicators.indicator == "gdp_growth_pct") & indicators.year.between(last - 4, last)]
-    macro["gdp_growth_avg_5y"] = g.groupby("iso3").value.mean()
-    hc = indicators[indicators.indicator == "hh_consumption_pc_const_usd"].pivot(
-        index="iso3", columns="year", values="value"
+    # Each window ends at the indicator's latest year with broad coverage, independent of the trade data's year
+    gdp = indicators[indicators.indicator == "gdp_growth_pct"]
+    g_end = covered_until(gdp)
+    macro["gdp_growth_avg_5y"] = (
+        gdp[gdp.year.between(g_end - 4, g_end)].groupby("iso3").value.mean() if g_end else np.nan
     )
+    hh = indicators[indicators.indicator == "hh_consumption_pc_const_usd"]
+    hc = hh.pivot(index="iso3", columns="year", values="value")
+    h_end = covered_until(hh)
     macro["hh_cons_pc_cagr_5y"] = [
-        cagr(hc.loc[i].get(last - 6), hc.loc[i].get(last - 1), 5) if i in hc.index else np.nan for i in macro.index
+        cagr(hc.loc[i].get(h_end - 5), hc.loc[i].get(h_end), 5) if h_end and i in hc.index else np.nan
+        for i in macro.index
     ]
 
     out = mkt.join(f, how="outer").join(macro, how="left")
@@ -113,9 +133,11 @@ def norm(s: pd.Series, transform=None) -> pd.Series:
     return (x - lo) / (hi - lo) if hi > lo else x * 0
 
 
-def top3_share(pillars: pd.DataFrame, weight_draws: np.ndarray) -> pd.Series:
-    """Share of weight draws in which each country ranks in the TOP3."""
-    scores = pillars[WEIGHTS.index].to_numpy() @ weight_draws.T  # countries x draws
+def top3_share(pillars: pd.DataFrame, columns: pd.Index, weight_draws: np.ndarray) -> pd.Series:
+    """Share of weight draws in which each country ranks in the TOP3 (everyone, if there are 3 or fewer)."""
+    if len(pillars) <= 3:
+        return pd.Series(1.0, index=pillars.index)
+    scores = pillars[columns].to_numpy() @ weight_draws.T  # countries x draws
     top3 = np.argpartition(-scores, 2, axis=0)[:3]
     return pd.Series(np.bincount(top3.ravel(), minlength=len(pillars)) / len(weight_draws), index=pillars.index)
 
@@ -142,13 +164,16 @@ def screen(
     p = p.dropna(thresh=3)  # too little data to score
     missing = p.isna()
     p = p.fillna(p.median())
+    columns = [c for cols in spec.values() for c, _ in cols]
+    p["missing_indicators"] = [[c for c in columns if pd.isna(f.at[iso, c])] for iso in p.index]
     p["imputed_pillars"] = [list(missing.columns[row]) for row in missing.to_numpy()]
+    p["latest_year"] = f.latest_year.reindex(p.index)
     p["score"] = (p[weights.index] * weights).sum(axis=1) * 100
 
     rng = np.random.default_rng(seed)
     perturbed = weights.to_numpy() * rng.uniform(0.8, 1.2, size=(draws, len(weights)))
-    p["top3_probability"] = top3_share(p, perturbed / perturbed.sum(axis=1, keepdims=True))
-    p["top3_prob_random_weights"] = top3_share(p, rng.dirichlet(np.ones(len(weights)), size=draws))
+    p["top3_probability"] = top3_share(p, weights.index, perturbed / perturbed.sum(axis=1, keepdims=True))
+    p["top3_prob_random_weights"] = top3_share(p, weights.index, rng.dirichlet(np.ones(len(weights)), size=draws))
     p["hub"] = f.hub.reindex(p.index)
     return p.sort_values("score", ascending=False)
 
