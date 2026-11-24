@@ -30,8 +30,15 @@ def _data_table(name: str, keys: list[tuple[str, type]], values: list[tuple[str,
 
 trade_flows = _data_table(
     "trade_flows",
-    [("source", sa.Text), ("reporter_iso3", sa.Text), ("partner_iso3", sa.Text), ("flow", sa.Text),
-     ("hs", sa.Text), ("freq", sa.Text), ("period", sa.Text)],
+    [
+        ("source", sa.Text),
+        ("reporter_iso3", sa.Text),
+        ("partner_iso3", sa.Text),
+        ("flow", sa.Text),
+        ("hs", sa.Text),
+        ("freq", sa.Text),
+        ("period", sa.Text),
+    ],
     [("value_usd", sa.Float), ("net_kg", sa.Float), ("imputed", sa.Boolean)],
 )
 country_indicators = _data_table(
@@ -41,8 +48,14 @@ country_indicators = _data_table(
 )
 tariffs = _data_table(
     "tariffs",
-    [("source", sa.Text), ("importer_iso3", sa.Text), ("hs", sa.Text), ("rate_type", sa.Text),
-     ("agreement", sa.Text), ("effective_from", sa.Text)],
+    [
+        ("source", sa.Text),
+        ("importer_iso3", sa.Text),
+        ("hs", sa.Text),
+        ("rate_type", sa.Text),
+        ("agreement", sa.Text),
+        ("effective_from", sa.Text),
+    ],
     [("effective_to", sa.Text), ("rate_pct", sa.Float), ("source_url", sa.Text)],
 )
 fx_rates = _data_table(
@@ -65,8 +78,10 @@ ingest_runs = sa.Table(
     sa.Column("status", sa.Text, nullable=False),
     sa.Column("started_at", sa.Text, nullable=False),
     sa.Column("finished_at", sa.Text),
-    *[sa.Column(c, sa.Integer) for c in ("rows_fetched", "rows_inserted", "rows_updated", "rows_unchanged",
-                                         "rows_invalid")],
+    *[
+        sa.Column(c, sa.Integer)
+        for c in ("rows_fetched", "rows_inserted", "rows_updated", "rows_unchanged", "rows_invalid")
+    ],
     sa.Column("error", sa.Text),
     sa.Column("ci_run_url", sa.Text),
 )
@@ -137,20 +152,35 @@ class Store:
     def start_run(self, source: str, trigger: str = "local", ci_run_url: str | None = None) -> str:
         run_id = str(uuid.uuid4())
         with self.engine.begin() as c:
-            c.execute(ingest_runs.insert().values(run_id=run_id, source=source, trigger=trigger, status="running",
-                                                  started_at=now(), ci_run_url=ci_run_url))
+            c.execute(
+                ingest_runs.insert().values(
+                    run_id=run_id,
+                    source=source,
+                    trigger=trigger,
+                    status="running",
+                    started_at=now(),
+                    ci_run_url=ci_run_url,
+                )
+            )
         return run_id
 
-    def log_event(self, run_id: str, step: str, status: str = "ok", message: str | None = None,
-                  metrics: dict | None = None) -> None:
+    def log_event(
+        self, run_id: str, step: str, status: str = "ok", message: str | None = None, metrics: dict | None = None
+    ) -> None:
         with self.engine.begin() as c:
-            c.execute(ingest_events.insert().values(run_id=run_id, ts=now(), step=step, status=status,
-                                                    message=message, metrics=metrics))
+            c.execute(
+                ingest_events.insert().values(
+                    run_id=run_id, ts=now(), step=step, status=status, message=message, metrics=metrics
+                )
+            )
 
     def finish_run(self, run_id: str, status: str, error: str | None = None, **counts: int) -> None:
         with self.engine.begin() as c:
-            c.execute(ingest_runs.update().where(ingest_runs.c.run_id == run_id)
-                      .values(status=status, finished_at=now(), error=error, **counts))
+            c.execute(
+                ingest_runs.update()
+                .where(ingest_runs.c.run_id == run_id)
+                .values(status=status, finished_at=now(), error=error, **counts)
+            )
 
     def upsert(self, table: str, df: pd.DataFrame, run_id: str) -> UpsertResult:
         """Insert new rows and update changed ones, matched on the table's natural key. Unchanged rows are untouched."""
@@ -160,8 +190,9 @@ class Store:
         stamp = {"retrieved_at": now(), "run_id": run_id}
         with self.engine.begin() as c:
             sources = df["source"].unique().tolist()
-            existing = {tuple(r[k] for k in keys): r for r in c.execute(t.select().where(t.c.source.in_(sources)))
-                        .mappings()}
+            existing = {
+                tuple(r[k] for k in keys): r for r in c.execute(t.select().where(t.c.source.in_(sources))).mappings()
+            }
             new, changed, revisions = [], [], []
             for row in _records(df):
                 row = {col: row.get(col) for col in keys + values}
@@ -173,14 +204,24 @@ class Store:
                 if diffs:
                     changed.append(row)
                     row_key = {k: row[k] for k in keys}
-                    revisions += [{"run_id": run_id, "table_name": table, "row_key": row_key, "field": v,
-                                   "old_value": _text(old[v]), "new_value": _text(row[v]),
-                                   "detected_at": stamp["retrieved_at"]} for v in diffs]
+                    revisions += [
+                        {
+                            "run_id": run_id,
+                            "table_name": table,
+                            "row_key": row_key,
+                            "field": v,
+                            "old_value": _text(old[v]),
+                            "new_value": _text(row[v]),
+                            "detected_at": stamp["retrieved_at"],
+                        }
+                        for v in diffs
+                    ]
             if new:
                 c.execute(t.insert(), new)
             for row in changed:
-                c.execute(t.update().where(*[t.c[k] == row[k] for k in keys]).values(**{v: row[v] for v in values},
-                                                                                   **stamp))
+                c.execute(
+                    t.update().where(*[t.c[k] == row[k] for k in keys]).values(**{v: row[v] for v in values}, **stamp)
+                )
             if revisions:
                 c.execute(data_revisions.insert(), revisions)
         return UpsertResult(len(new), len(changed), len(df) - len(new) - len(changed))
@@ -191,8 +232,9 @@ class Store:
 
     def events(self, run_id: str) -> pd.DataFrame:
         with self.engine.connect() as c:
-            return pd.read_sql(ingest_events.select().where(ingest_events.c.run_id == run_id)
-                               .order_by(ingest_events.c.id), c)
+            return pd.read_sql(
+                ingest_events.select().where(ingest_events.c.run_id == run_id).order_by(ingest_events.c.id), c
+            )
 
     def revisions(self, run_id: str) -> pd.DataFrame:
         with self.engine.connect() as c:

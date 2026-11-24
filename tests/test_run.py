@@ -58,7 +58,12 @@ def test_revised_upstream_value_is_updated_and_recorded_old_to_new(store):
     krw = store.read("fx_rates").set_index("quote").loc["KRW"]
     assert (krw.rate, krw.run_id) == (1450.5, second.run_id)
     [rev] = store.revisions(second.run_id).to_dict(orient="records")
-    assert (rev["table_name"], rev["field"], rev["old_value"], rev["new_value"]) == ("fx_rates", "rate", "1400.0", "1450.5")
+    assert (rev["table_name"], rev["field"], rev["old_value"], rev["new_value"]) == (
+        "fx_rates",
+        "rate",
+        "1400.0",
+        "1450.5",
+    )
     assert rev["row_key"] == {"source": "fx", "date": "2026-11-24", "base": "USD", "quote": "KRW"}
 
 

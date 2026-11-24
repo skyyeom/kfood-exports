@@ -38,9 +38,10 @@ def run_sources(sources: list[Source], store: Store, http: Any, trigger: str = "
             store.log_event(run_id, "fetch", metrics={"rows": len(df)})
             step = "upsert"
             up = store.upsert(source.table, df, run_id)
-            store.log_event(run_id, "upsert", metrics={"inserted": up.inserted, "updated": up.updated,
-                                                       "unchanged": up.unchanged})
-        except Exception as e:  # one failing source must not stop the others
+            store.log_event(
+                run_id, "upsert", metrics={"inserted": up.inserted, "updated": up.updated, "unchanged": up.unchanged}
+            )
+        except Exception as e:  # noqa: BLE001 — one failing source must not stop the others
             error = f"{type(e).__name__}: {e}"
             store.log_event(run_id, step, "error", message=error)
             store.log_event(run_id, "finish", "error")
@@ -48,7 +49,13 @@ def run_sources(sources: list[Source], store: Store, http: Any, trigger: str = "
             results.append(RunResult(source.name, run_id, "failed"))
             continue
         store.log_event(run_id, "finish")
-        store.finish_run(run_id, "success", rows_fetched=len(df), rows_inserted=up.inserted,
-                         rows_updated=up.updated, rows_unchanged=up.unchanged)
+        store.finish_run(
+            run_id,
+            "success",
+            rows_fetched=len(df),
+            rows_inserted=up.inserted,
+            rows_updated=up.updated,
+            rows_unchanged=up.unchanged,
+        )
         results.append(RunResult(source.name, run_id, "success", up.inserted, up.updated, up.unchanged))
     return results
