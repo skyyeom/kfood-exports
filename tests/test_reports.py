@@ -72,3 +72,13 @@ def test_reports_are_stored_and_listed_newest_first():
     weeks = [r["week"] for r in store.list_reports()]
     assert weeks == ["2026-W49", "2026-W48"]
     assert store.get_report("2026-W48")["title"].startswith("Week 48")
+
+
+def test_report_includes_tracked_markets_and_their_alerts():
+    store = seeded_store()
+    store.watch("PHL")
+
+    r = build_report(store, now=NOW)
+
+    assert [m["name"] for m in r["tracked"]] == ["Philippines"]
+    assert "## Tracked markets" in to_markdown(r)

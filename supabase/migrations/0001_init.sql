@@ -128,6 +128,12 @@ CREATE TABLE IF NOT EXISTS trade_flows (
 	PRIMARY KEY (source, reporter_iso3, partner_iso3, flow, hs, freq, period)
 );
 
+CREATE TABLE IF NOT EXISTS watchlist (
+	iso3 TEXT NOT NULL, 
+	added_at TEXT NOT NULL, 
+	PRIMARY KEY (iso3)
+);
+
 -- Row-level security: public read for the dashboard; writes only via the service role.
 alter table commodity_prices enable row level security;
 drop policy if exists "public read" on commodity_prices;
@@ -159,6 +165,9 @@ create policy "public read" on tariffs for select to anon, authenticated using (
 alter table trade_flows enable row level security;
 drop policy if exists "public read" on trade_flows;
 create policy "public read" on trade_flows for select to anon, authenticated using (true);
+alter table watchlist enable row level security;
+drop policy if exists "public read" on watchlist;
+create policy "public read" on watchlist for select to anon, authenticated using (true);
 
 -- Live run feed on the Automation page (Supabase Realtime).
 do $$ begin

@@ -123,6 +123,13 @@ ranking_snapshots = sa.Table(
     sa.Column("payload", sa.JSON, nullable=False),
 )
 
+watchlist = sa.Table(
+    "watchlist",
+    metadata,
+    sa.Column("iso3", sa.Text, primary_key=True),
+    sa.Column("added_at", sa.Text, nullable=False),
+)
+
 reports = sa.Table(
     "reports",
     metadata,
@@ -320,6 +327,30 @@ class Store:
         with self.engine.connect() as c:
             row = c.execute(q).mappings().first()
         return row["payload"] if row else None
+
+    def watch(self, iso3: str) -> None:
+        from pipeline.config import CANDIDATES
+
+        if iso3 not in CANDIDATES:
+            raise KeyError(iso3)
+        with self.engine.begin() as c:
+            if not c.execute(sa.select(watchlist.c.iso3).where(watchlist.c.iso3 == iso3)).first():
+                c.execute(watchlist.insert().values(iso3=iso3, added_at=now()))
+
+    def unwatch(self, iso3: str) -> None:
+        with self.engine.begin() as c:
+            c.execute(watchlist.delete().where(watchlist.c.iso3 == iso3))
+
+    def watched(self) -> list[str]:
+        with self.engine.connect() as c:
+            return [r.iso3 for r in c.execute(sa.select(watchlist.c.iso3).order_by(watchlist.c.added_at))]
+
+    def revisions_since(self, cutoff: str, table: str | None = None) -> pd.DataFrame:
+        q = data_revisions.select().where(data_revisions.c.detected_at >= cutoff)
+        if table:
+            q = q.where(data_revisions.c.table_name == table)
+        with self.engine.connect() as c:
+            return pd.read_sql(q.order_by(data_revisions.c.id), c)
 
     def save_report(self, report: dict) -> None:
         """Insert or replace the report for its ISO week."""
