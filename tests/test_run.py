@@ -7,7 +7,7 @@ import pytest
 from analysis_data import load_tables
 from fakes import FIXTURES, RecordedHttp
 
-from pipeline.db import Store, metadata
+from pipeline.db import Store
 from pipeline.raw import LocalRawStore
 from pipeline.run import run_sources
 from pipeline.sources.fx import FxSource
@@ -35,7 +35,7 @@ def fx_rows(krw=1400.0, jpy=150.0):
 def store():
     """In-memory SQLite by default; set TEST_DATABASE_URL to run the same tests against Postgres."""
     s = Store(os.environ.get("TEST_DATABASE_URL", "sqlite://"))
-    metadata.drop_all(s.engine)
+    s.drop_all()
     s.create_all()
     return s
 

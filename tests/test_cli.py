@@ -4,7 +4,7 @@ import pytest
 import sqlalchemy as sa
 from fakes import RecordedHttp
 
-from pipeline.db import Store, metadata
+from pipeline.db import Store
 from pipeline.run import main
 
 FX = ("https://open.er-api.com/v6/latest/USD", {}, "fx_open_er_api.json")
@@ -56,7 +56,7 @@ def test_unknown_source_is_rejected():
 @pytest.mark.skipif("TEST_DATABASE_URL" not in os.environ, reason="needs a Postgres database")
 def test_postgres_without_the_migration_fails_fast_instead_of_creating_tables_without_rls():
     url = os.environ["TEST_DATABASE_URL"]
-    metadata.drop_all(Store(url).engine)
+    Store(url).drop_all()
 
     code = main(["--source", "fx"], env={"DATABASE_URL": url}, http=RecordedHttp(FX))
 

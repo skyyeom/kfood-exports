@@ -16,3 +16,12 @@ def test_migration_lets_the_browser_read_every_table_but_write_none():
         assert f"alter table {table} enable row level security;" in sql
         assert f'create policy "public read" on {table} for select to anon, authenticated using (true);' in sql
     assert "for insert" not in sql and "for update" not in sql
+
+
+def test_migration_grants_public_read_and_revokes_writes_explicitly():
+    # Regression: public read relied on Supabase's default grants; a database without them denied the dashboard
+    sql = migration_sql()
+
+    for table in ("trade_flows", "bi_rankings", "watchlist"):
+        assert f"grant select on {table} to anon, authenticated;" in sql
+        assert f"revoke insert, update, delete, truncate on {table} from anon, authenticated;" in sql

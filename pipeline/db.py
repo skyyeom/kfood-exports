@@ -267,9 +267,17 @@ class Store:
 
     def create_all(self) -> None:
         metadata.create_all(self.engine)
+        create = "create view if not exists" if self.engine.dialect.name == "sqlite" else "create or replace view"
         with self.engine.begin() as c:
             for name, sql in BI_VIEWS.items():
-                c.execute(sa.text(f"create view if not exists {name} as {sql}"))
+                c.execute(sa.text(f"{create} {name} as {sql}"))
+
+    def drop_all(self) -> None:
+        """Drop views first: Postgres refuses to drop tables that views depend on (used by tests)."""
+        with self.engine.begin() as c:
+            for name in BI_VIEWS:
+                c.execute(sa.text(f"drop view if exists {name}"))
+        metadata.drop_all(self.engine)
 
     def is_migrated(self) -> bool:
         tables = set(sa.inspect(self.engine).get_table_names())
@@ -496,6 +504,8 @@ def migration_sql() -> str:
     parts.append("-- Row-level security: public read for the dashboard; writes only via the service role.")
     for t in metadata.sorted_tables:
         parts.append(f"alter table {t.name} enable row level security;")
+        parts.append(f"grant select on {t.name} to anon, authenticated;")
+        parts.append(f"revoke insert, update, delete, truncate on {t.name} from anon, authenticated;")
         parts.append(f'drop policy if exists "public read" on {t.name};')
         parts.append(f'create policy "public read" on {t.name} for select to anon, authenticated using (true);')
     parts.append("\n-- Live run feed on the Automation page (Supabase Realtime).")
