@@ -141,6 +141,66 @@ reports = sa.Table(
     sa.Column("markdown", sa.Text, nullable=False),
 )
 
+# --- BI layer: flat tables refreshed on every re-rank, plus views over the raw data (pipeline/bi.py) ---
+bi_rankings = sa.Table(
+    "bi_rankings",
+    metadata,
+    sa.Column("category", sa.Text, primary_key=True),
+    sa.Column("iso3", sa.Text, primary_key=True),
+    sa.Column("name", sa.Text, nullable=False),
+    sa.Column("rank", sa.Integer, nullable=False),
+    sa.Column("score", sa.Float, nullable=False),
+    *[
+        sa.Column(c, sa.Float)
+        for c in ("market_growth", "market_size", "korean_momentum", "entry_ease", "p_top3", "p_top3_any_weights")
+    ],
+    sa.Column("confidence", sa.Text),
+    sa.Column("headline", sa.Text),
+    sa.Column("latest_year", sa.Integer),
+    sa.Column("computed_at", sa.Text, nullable=False),
+)
+bi_forecast = sa.Table(
+    "bi_forecast",
+    metadata,
+    sa.Column("year", sa.Integer, primary_key=True),
+    sa.Column("iso3", sa.Text, primary_key=True),
+    sa.Column("name", sa.Text, nullable=False),
+    *[sa.Column(c, sa.Float) for c in ("score", "low", "high", "p_top3")],
+    sa.Column("rank", sa.Integer),
+    sa.Column("model", sa.Text),
+    sa.Column("computed_at", sa.Text, nullable=False),
+)
+bi_score_history = sa.Table(
+    "bi_score_history",
+    metadata,
+    sa.Column("year", sa.Integer, primary_key=True),
+    sa.Column("iso3", sa.Text, primary_key=True),
+    sa.Column("name", sa.Text, nullable=False),
+    sa.Column("score", sa.Float),
+    sa.Column("rank", sa.Integer),
+    sa.Column("computed_at", sa.Text, nullable=False),
+)
+BI_TABLE_NAMES = ("bi_rankings", "bi_forecast", "bi_score_history")
+
+# Portable SQL (SQLite and Postgres), so local and Supabase BI connections see the same views
+BI_VIEWS = {
+    "bi_monthly_exports": (
+        "select partner_iso3 as iso3, substr(hs, 1, 4) as category, period, "
+        "substr(period, 1, 4) || '-' || substr(period, 5, 2) || '-01' as month, "
+        "sum(value_usd) as value_usd, sum(net_kg) as net_kg "
+        "from trade_flows where source = 'kcs_monthly' and flow = 'X' "
+        "group by partner_iso3, substr(hs, 1, 4), period"
+    ),
+    "bi_annual_trade": (
+        "select source, reporter_iso3, partner_iso3, flow, hs, cast(period as integer) as year, value_usd, net_kg "
+        "from trade_flows where freq = 'A'"
+    ),
+    "bi_pipeline_runs": (
+        "select source, status, trigger, started_at, finished_at, rows_fetched, rows_inserted, rows_updated, "
+        "rows_unchanged, rows_invalid, error from ingest_runs"
+    ),
+}
+
 DATA_TABLES = {t.name: t for t in (trade_flows, country_indicators, tariffs, fx_rates, commodity_prices)}
 
 
@@ -207,6 +267,9 @@ class Store:
 
     def create_all(self) -> None:
         metadata.create_all(self.engine)
+        with self.engine.begin() as c:
+            for name, sql in BI_VIEWS.items():
+                c.execute(sa.text(f"create view if not exists {name} as {sql}"))
 
     def is_migrated(self) -> bool:
         tables = set(sa.inspect(self.engine).get_table_names())
@@ -441,6 +504,16 @@ def migration_sql() -> str:
     parts.append("exception when duplicate_object then null; end $$;")
     parts.append("\n-- Private bucket for raw upstream responses (raw/{source}/{run_id}.zip).")
     parts.append("insert into storage.buckets (id, name, public) values ('raw', 'raw', false) on conflict do nothing;")
+    parts.append("\n-- BI: views over the raw data, and a read-only role for BI tools (docs/bi_guide.md).")
+    parts += [f"create or replace view {name} as {sql};" for name, sql in BI_VIEWS.items()]
+    parts.append("do $$ begin")
+    parts.append("  create role bi_reader nologin;  -- enable with: alter role bi_reader with login password '...';")
+    parts.append("exception when duplicate_object then null; end $$;")
+    parts.append("grant usage on schema public to bi_reader;")
+    parts += [f"grant select on {name} to bi_reader;" for name in (*BI_TABLE_NAMES, *BI_VIEWS)]
+    for name in BI_TABLE_NAMES:
+        parts.append(f'drop policy if exists "bi read" on {name};')
+        parts.append(f'create policy "bi read" on {name} for select to bi_reader using (true);')
     return "\n".join(parts) + "\n"
 
 

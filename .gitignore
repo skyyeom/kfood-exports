@@ -33,3 +33,4 @@ frontend/playwright-report/
 
 # Local pipeline database
 data/*.db
+data/exports/

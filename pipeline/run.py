@@ -17,6 +17,7 @@ from typing import Any, Protocol
 
 import pandas as pd
 
+from pipeline.bi import refresh_bi_tables
 from pipeline.db import Store, UpsertResult
 from pipeline.forecast import trends
 from pipeline.http import Http
@@ -65,6 +66,7 @@ def _rerank(store: Store, run_id: str, force: bool = False) -> None:
     for category, rows in by_category.items():
         store.save_ranking(run_id, category, "corrected", "default", rows)
     store.save_ranking(run_id, "all", "trend", "default", trends(trade, indicators))
+    refresh_bi_tables(store)
     top3 = [r["iso3"] for r in by_category["all"][:3]]
     store.log_event(run_id, "rerank", metrics={"categories": len(by_category), "top3": top3})
 

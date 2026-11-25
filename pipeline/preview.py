@@ -192,6 +192,23 @@ class _Handler(BaseHTTPRequestHandler):
             except KeyError:
                 return self._send(404, b'{"error": "unknown country"}')
             self._send(200, json.dumps(body, default=str).encode())
+        elif path == "/api/bi.zip":
+            import io
+            import tempfile
+            import zipfile
+
+            from pipeline.bi import export_csv
+
+            with tempfile.TemporaryDirectory() as tmp:
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+                    for path in export_csv(self.store, tmp):
+                        z.write(path, path.name)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", 'attachment; filename="wellgtm-bi-data.zip"')
+            self.end_headers()
+            self.wfile.write(buf.getvalue())
         elif path == "/api/tracker":
             self._send(200, json.dumps(tracker_state(self.store), default=str).encode())
         elif path == "/api/reports":
