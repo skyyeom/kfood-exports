@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import threading
+import time
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,20 +21,23 @@ from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 
+from pipeline.alerts import market_alerts, monthly_exports
 from pipeline.auth import LoginThrottle, Sessions, verify_password
 from pipeline.config import CANDIDATES, FTA_WITH_KOREA, HS
 from pipeline.db import Store
 from pipeline.http import Http
-from pipeline.indicators import CATEGORIES
+from pipeline.indicators import CATEGORIES, PRESETS
+from pipeline.insights import next_steps, trends_state
 from pipeline.insights import records as _records
-from pipeline.insights import trends_state
 from pipeline.raw import LocalRawStore
 from pipeline.run import run_sources
 from pipeline.sources import SOURCES
 
 PAGE = Path(__file__).with_name("preview.html")
 LOGIN_PAGE = Path(__file__).with_name("login.html")
+SCORE_JS = Path(__file__).with_name("score.js")
 COOKIE = "wellgtm_session"
+STATE_TTL = 30  # seconds; data only changes when a pipeline run finishes
 
 # Mirrors the cron lines in .github/workflows/ingest-*.yml (UTC): (weekday or None, day of month or None, hour)
 SCHEDULES = {
@@ -84,14 +88,48 @@ def state(store: Store) -> dict:
         mine = events[events.run_id == run["run_id"]]
         run["events"] = _records(mine[["step", "status", "ts", "message", "metrics"]])
     categories = ("all", "1704", "1806", "1905", "2105")
-    latest = store.latest_rankings([(c, "corrected") for c in categories] + [("all", "trend")])
+    latest = store.latest_rankings([(c, v) for c in categories for v in ("corrected", "trend")])
+    week_ago = (datetime.now(UTC) - timedelta(days=7)).isoformat(timespec="milliseconds")
+    before = store.latest_rankings([(c, "corrected") for c in categories], before=week_ago)
+    ranking = {}
+    for c in categories:
+        was = {r["iso3"]: r["rank"] for r in before.get((c, "corrected")) or []}
+        ranking[c] = [
+            r | {"rank_change": (was[r["iso3"]] - r["rank"]) if r["iso3"] in was else None}
+            for r in latest.get((c, "corrected")) or []
+        ]
+    current_all = ranking["all"]
+
+    # alerts and next steps for the top 10 overall plus every category's TOP3
+    watch = list(
+        dict.fromkeys([r["iso3"] for r in current_all[:10]] + [r["iso3"] for c in categories for r in ranking[c][:3]])
+    )
+    alerts = market_alerts(store, isos=watch, current=current_all, previous=before.get(("all", "corrected")) or [])
+    tariffs = store.read("tariffs")
+    today = datetime.now(UTC).date().isoformat()
+    rows_by_iso = {r["iso3"]: r for c in reversed(categories) for r in ranking[c]}  # "all" last, so it wins
+    steps = {
+        iso: next_steps(rows_by_iso[iso], [a for a in alerts if a["iso3"] == iso], tariffs, today)
+        for iso in watch
+        if iso in rows_by_iso
+    }
+    world = monthly_exports(store, ["WLD"]).get("WLD")
     return {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "sources": sources,
         "runs": recent,
         "revisions": _records(store.recent_revisions(25)),
-        "ranking": {c: latest.get((c, "corrected")) or [] for c in categories},
-        "trend": latest.get(("all", "trend")) or None,
+        "ranking": ranking,
+        "trend": {c: latest.get((c, "trend")) for c in categories if latest.get((c, "trend"))},
+        "presets": PRESETS,
+        "next_steps": steps,
+        "exports_by_country": monthly_exports(store, watch),
+        "alerts": alerts,
+        "kpis": {
+            "exports": world,
+            "alerts": len([a for a in alerts if a["iso3"] in {r["iso3"] for r in current_all[:10]}]),
+            "top3_robust": sum(r["reasons"]["confidence"]["level"] == "robust" for r in current_all[:3]),
+        },
         "rows": store.row_counts(("trade_flows", "country_indicators", "tariffs", "fx_rates", "commodity_prices")),
     }
 
@@ -177,6 +215,20 @@ class _Handler(BaseHTTPRequestHandler):
     password_hash: str
     sessions: Sessions
     throttle: LoginThrottle
+    cache: dict  # {"at": monotonic time, "state": dict}; cleared when a run or report finishes
+
+    def _state(self) -> dict:
+        with self.lock:
+            fresh = self.cache.get("state") is not None and time.monotonic() - self.cache["at"] < STATE_TTL
+        if not fresh:
+            data = state(self.store)
+            with self.lock:
+                self.cache.update(at=time.monotonic(), state=data)
+        return self.cache["state"] | {"running": sorted(self.running)}
+
+    def _invalidate(self) -> None:
+        with self.lock:
+            self.cache.clear()
 
     # ---- sign-in gate: only /login is public; every other page and API call needs a session ----
     def _token(self) -> str | None:
@@ -266,6 +318,8 @@ class _Handler(BaseHTTPRequestHandler):
     def _get(self, path: str) -> None:
         if path == "/":
             self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+        elif path == "/score.js":
+            self._send(200, SCORE_JS.read_bytes(), "text/javascript; charset=utf-8")
         elif path.startswith("/api/country/"):
             try:
                 body = country_state(self.store, path.rsplit("/", 1)[-1].upper())
@@ -307,7 +361,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif path == "/api/trends":
             self._send(200, json.dumps(trends_state(self.store), default=str).encode())
         elif path == "/api/state":
-            self._send(200, json.dumps(state(self.store) | {"running": sorted(self.running)}, default=str).encode())
+            self._send(200, json.dumps(self._state(), default=str).encode())
         else:
             self._send(404, b'{"error": "not found"}')
 
@@ -329,6 +383,7 @@ class _Handler(BaseHTTPRequestHandler):
         from pipeline.run import _weekly_report
 
         _weekly_report(self.store, "manual", None)
+        self._invalidate()
         latest = self.store.list_reports()
         return latest[0] if latest else {}
 
@@ -338,6 +393,7 @@ class _Handler(BaseHTTPRequestHandler):
         finally:
             with self.lock:
                 self.running.discard(source)
+            self._invalidate()
 
     def log_message(self, *args):  # keep the terminal quiet
         pass
@@ -354,6 +410,7 @@ def make_server(store: Store, port: int, username: str, password_hash: str) -> T
             "password_hash": password_hash,
             "sessions": Sessions(),
             "throttle": LoginThrottle(),
+            "cache": {},
         },
     )
     return ThreadingHTTPServer(("127.0.0.1", port), handler)

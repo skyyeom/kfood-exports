@@ -21,10 +21,18 @@ def db_url(tmp_path_factory):
     return f"sqlite:///{tmp_path_factory.mktemp('login')}/w.db"
 
 
+SERVERS = {}
+
+
+def server_store_engine(port):
+    return SERVERS[port].RequestHandlerClass.store.engine
+
+
 @pytest.fixture(scope="module")
 def server(db_url):
     srv = make_server(seeded_store(db_url), port=0, username=USER, password_hash=hash_password(PASSWORD))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    SERVERS[srv.server_address[1]] = srv
     yield srv.server_address[1]
     srv.shutdown()
 
@@ -120,3 +128,22 @@ def test_repeated_wrong_passwords_lock_the_login_even_for_the_right_password(db_
 def test_the_dashboard_will_not_start_without_a_configured_login(capsys):
     assert main(port=0, env={"DATABASE_URL": "sqlite://"}) == 2
     assert "python -m pipeline.auth set" in capsys.readouterr().out
+
+
+def test_dashboard_data_is_cached_between_refreshes(server):
+    # 2.3 s and ~700 KB per refresh against Supabase: repeated refreshes within the cache window must not
+    # query the database again
+    import sqlalchemy as sa
+
+    *_, cookie = sign_in(server)
+    request(server, "GET", "/api/state", cookie=cookie)
+    queries = []
+    store_engine = server_store_engine(server)
+    listener = lambda *a, **k: queries.append(1)
+    sa.event.listen(store_engine, "before_cursor_execute", listener)
+    try:
+        status, _, _ = request(server, "GET", "/api/state", cookie=cookie)
+    finally:
+        sa.event.remove(store_engine, "before_cursor_execute", listener)
+
+    assert status == 200 and queries == []

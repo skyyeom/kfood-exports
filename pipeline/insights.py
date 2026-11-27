@@ -78,3 +78,40 @@ def trends_state(store: Store) -> dict:
         "commodities": commodities,
         "score_trend": store.latest_ranking(variant="trend") or None,
     }
+
+
+def next_steps(row: dict, alerts: list[dict], tariffs: pd.DataFrame, today: str) -> list[str]:
+    """Up to three data-based things to check next for a ranked market (no invented advice).
+
+    Built from the market's alerts, tariffs in force, FTA status and the reason pack's confidence and caveats.
+    """
+    from pipeline.config import FTA_WITH_KOREA
+
+    iso, reasons = row["iso3"], row.get("reasons", {})
+    steps = []
+    for a in alerts:
+        if a["kind"] == "exports":
+            up = "+" in a["text"]
+            steps.append(
+                f"{a['text'].rstrip('.')}: {'check distributor and supply capacity' if up else 'review distributor performance and pricing'}."
+            )
+    t = tariffs[
+        (tariffs.importer_iso3 == iso)
+        & (tariffs.effective_from <= today)
+        & (tariffs.effective_to.isna() | (tariffs.effective_to > today))
+    ]
+    for extra in t[t.rate_type == "additional"].drop_duplicates("agreement").itertuples():
+        steps.append(f"Price in the {extra.rate_pct:g}% {extra.agreement}.")
+    if iso in FTA_WITH_KOREA and t[t.rate_type == "pref"].empty:
+        steps.append(f"Confirm the {FTA_WITH_KOREA[iso]} preferential rate: the applied tariff shown is MFN.")
+    level = reasons.get("confidence", {}).get("level")
+    if level == "depends on priorities":
+        steps.append("This pick depends on your priorities: compare it under the Scale and Growth presets.")
+    elif level == "fragile":
+        steps.append("This pick is fragile: small weight changes drop it out of the TOP3.")
+    for caveat in reasons.get("caveats", []):
+        if "reports imports from Korea" in caveat:
+            steps.append("Check partner-side import data: it differs a lot from Korea's export figures.")
+        elif "produces locally" in caveat:
+            steps.append("Weigh local production against exports from Korea for this market.")
+    return steps[:3]

@@ -97,11 +97,11 @@ WITS MFN rows are per HS6 line; overrides may be given at HS4, in which case the
 `id`, `run_id`, `table_name`, `row_key` (JSON of the natural key), `field`, `old_value`, `new_value`, `detected_at`. One row per changed field.
 
 ### `ranking_snapshots`
-`id`, `run_id`, `computed_at`, `category` (`all` or an HS code), `variant` (`corrected`: volume growth, hubs excluded; `naive` reserved for the FR-1.6 toggle; `trend`: score history and forecast, see below), `preset` (`default` until M2 presets), `payload`.
+`id`, `run_id`, `computed_at`, `category` (`all` or an HS code), `variant` (`corrected`: volume growth, hubs excluded; `naive` reserved for the FR-1.6 toggle; `trend`: score history and forecast, see below), `preset` (`default`; the Scale and Growth/entry presets and custom weights are re-ranked in the browser by `pipeline/score.js`, which tests keep identical to the Python screen), `payload`.
 
 `payload` is a JSON list ordered by rank, one object per country: `iso3`, `rank`, `score`, the four pillar values, `top3_probability` (±20% weights), `top3_prob_random_weights` (Dirichlet), `imputed_pillars` (pillars filled with the median), `missing_indicators` (indicators absent inside a pillar), `latest_year` (data year of the import figures), `hub` and `reasons`: a plain-language explanation built from the same data (`summary`; the two strongest pillars and the weakest, each with its rank and the facts behind it, with value, unit, period and source; `confidence` (`robust`, `depends on priorities` or `fragile`, from the two P(TOP3) values); and `caveats` such as mirror-data gaps, local production, hubs and missing data). Recompute after a scoring change with `python -m pipeline.run --rerank`.
 
-The `trend` snapshot's payload is an object: `history` (score and rank per country for the latest 6 years, each year scored only with data known by then), `forecast` (per future year: expected `score`, 80% range `low`–`high`, expected `rank`, `p_top3` and the winning `model`), `holdout` (forecast of the latest year from the five before it vs what happened), `models` and `method`.
+There is one `trend` snapshot per category (`all` and each HS code). Its payload is an object: `history` (score and rank per country for the latest 6 years, each year scored only with data known by then), `forecast` (per future year: expected `score`, 80% range `low`–`high`, expected `rank`, `p_top3` and the winning `model`), `holdout` (forecast of the latest year from the five before it vs what happened), `models` and `method`.
 
 ## Access (RLS)
 - `anon`: `select` on every table above.

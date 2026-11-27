@@ -13,6 +13,19 @@ from pipeline.config import HS, HUBS, NOT_IN_WORLD_BANK, SANCTIONED
 WEIGHTS = pd.Series({"Market growth": 0.30, "Market size": 0.25, "K-momentum (trade)": 0.30, "Entry ease": 0.15})
 DRAWS = 5000
 
+# Strategy lenses from docs/pm/03_data_analysis.md §3 (FR-1.2); users can also set their own weights
+PRESETS = {
+    "default": {"label": "Balanced (default)", "weights": WEIGHTS.to_dict()},
+    "scale": {
+        "label": "Scale markets",
+        "weights": {"Market growth": 0.10, "Market size": 0.40, "K-momentum (trade)": 0.35, "Entry ease": 0.15},
+    },
+    "growth": {
+        "label": "Growth / entry markets",
+        "weights": {"Market growth": 0.45, "Market size": 0.10, "K-momentum (trade)": 0.25, "Entry ease": 0.20},
+    },
+}
+
 
 def cagr(first: float, last: float, years: int) -> float:
     if first is None or last is None or first <= 0 or last <= 0 or years <= 0:

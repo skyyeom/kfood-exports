@@ -15,6 +15,7 @@ import math
 import numpy as np
 import pandas as pd
 
+from pipeline.config import HS
 from pipeline.indicators import build_features, screen
 
 MODELS = ("no change", "drift", "damped drift", "compound growth")  # tie → the earlier (simpler) model wins
@@ -77,11 +78,11 @@ def _as_of(trade: pd.DataFrame, indicators: pd.DataFrame, year: int) -> tuple[pd
     return annual[annual.period.astype(int) <= year], indicators[indicators.year <= year]
 
 
-def history(trade: pd.DataFrame, indicators: pd.DataFrame, years: list[int]) -> pd.DataFrame:
+def history(trade: pd.DataFrame, indicators: pd.DataFrame, years: list[int], hs: list[str] = HS) -> pd.DataFrame:
     """Score and rank for each past year, each computed only from data up to that year."""
     out = []
     for year in years:
-        ranked = screen(build_features(*_as_of(trade, indicators, year)), draws=1)
+        ranked = screen(build_features(*_as_of(trade, indicators, year), hs=hs), draws=1)
         out.append(
             pd.DataFrame(
                 {
@@ -95,10 +96,10 @@ def history(trade: pd.DataFrame, indicators: pd.DataFrame, years: list[int]) -> 
     return pd.concat(out, ignore_index=True)
 
 
-def _past(trade: pd.DataFrame, indicators: pd.DataFrame) -> pd.DataFrame:
+def _past(trade: pd.DataFrame, indicators: pd.DataFrame, hs: list[str] = HS) -> pd.DataFrame:
     """Score history for the latest 6 years."""
     last = int(trade[trade.freq == "A"].period.astype(int).max())
-    return history(trade, indicators, list(range(last - 5, last + 1)))
+    return history(trade, indicators, list(range(last - 5, last + 1)), hs=hs)
 
 
 def _score_forecasts(past: pd.DataFrame, years: list[int]) -> dict:
@@ -196,7 +197,9 @@ def model_report(
     }
 
 
-def trends(trade: pd.DataFrame, indicators: pd.DataFrame, horizon: int = 3, draws: int = 2000) -> dict:
+def trends(
+    trade: pd.DataFrame, indicators: pd.DataFrame, horizon: int = 3, draws: int = 2000, hs: list[str] = HS
+) -> dict:
     """Score history, forecast and out-of-sample check, as one JSON-ready payload for the dashboard."""
     from pipeline.config import CANDIDATES
 
@@ -206,7 +209,7 @@ def trends(trade: pd.DataFrame, indicators: pd.DataFrame, horizon: int = 3, draw
     def rows(df: pd.DataFrame) -> list[dict]:
         return [r | {"name": CANDIDATES[r["iso3"]][1]} for r in df.to_dict(orient="records")]
 
-    past = _past(trade, indicators)
+    past = _past(trade, indicators, hs=hs)
     return {
         "history": rows(past),
         "forecast": rows(project(trade, indicators, future, draws=draws, past=past)),

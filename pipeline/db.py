@@ -466,10 +466,14 @@ class Store:
         with self.engine.connect() as c:
             return pd.read_sql(q, c)
 
-    def latest_rankings(self, keys: list[tuple[str, str]], preset: str = "default") -> dict[tuple[str, str], object]:
+    def latest_rankings(
+        self, keys: list[tuple[str, str]], preset: str = "default", before: str | None = None
+    ) -> dict[tuple[str, str], object]:
         """Latest snapshot payload for each (category, variant), in two queries instead of one per key."""
         r = ranking_snapshots.c
         heads = sa.select(r.id, r.category, r.variant, r.computed_at).where(r.preset == preset)
+        if before:
+            heads = heads.where(r.computed_at < before)
         latest: dict[tuple[str, str], tuple[str, int]] = {}
         with self.engine.connect() as c:
             for row in c.execute(heads):

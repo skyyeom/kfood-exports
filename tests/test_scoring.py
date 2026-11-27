@@ -98,3 +98,22 @@ def test_custom_weights_drive_the_top3_probabilities(features):
     got = screen(features, variant="corrected", weights=growth_only)
 
     assert set(got.index[:3]) == set(got.top3_probability.nlargest(3).index)
+
+
+def test_presets_reproduce_the_two_strategy_lenses_in_the_analysis(features):
+    # 03 §3: "Canada wins if size and stability matter more; India wins if growth matters most"
+    from pipeline.indicators import PRESETS
+
+    scale = screen(features, weights=pd.Series(PRESETS["scale"]["weights"]), draws=200)
+    growth = screen(features, weights=pd.Series(PRESETS["growth"]["weights"]), draws=200)
+
+    assert list(scale.index[:3]) == ["USA", "CHN", "CAN"] and "JPN" in scale.index[:6]
+    assert "IND" in growth.index[:3] and {"PHL", "MYS", "VNM"} <= set(growth.index[:6])
+
+
+def test_every_preset_has_a_label_and_weights_that_sum_to_one():
+    from pipeline.indicators import PRESETS, WEIGHTS
+
+    assert PRESETS["default"]["weights"] == WEIGHTS.to_dict()
+    for p in PRESETS.values():
+        assert p["label"] and abs(sum(p["weights"].values()) - 1) < 1e-9 and set(p["weights"]) == set(PILLARS)
