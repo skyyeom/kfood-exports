@@ -112,6 +112,10 @@
   tbody tr:hover td { background: var(--wash); }
   tr.is-top td:nth-child(2) { font-weight: 700; }
   .bar-cell { width: 30%; min-width: 150px; }
+  /* destinations: names take only the room they need, so the 12-month bars start further left and run longer */
+  .dest th:first-child, .dest td:first-child { width: 1%; white-space: nowrap; padding-right: 20px; }
+  .dest .bar-cell { width: 60%; min-width: 220px; }
+  .dest .bar { height: 14px; }
   .bar-wrap { display: flex; align-items: center; gap: 8px; }
   .bar { position: relative; height: 12px; flex: 1; }
   .bar span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--series-1); border-radius: 0 4px 4px 0; }
@@ -777,7 +781,7 @@ function renderTrendsPage() {
   monthlyChart(document.getElementById("tr-exp"), t.kfood_monthly, kfoodTable, "Korea's monthly K-food exports to the world by product category");
   document.querySelector("[data-toggle-kfood]").textContent = kfoodTable ? "Show chart" : "Show as table";
   const maxDest = Math.max(...t.destinations.map(d => d.last12_usd), 1);
-  document.getElementById("tr-dest").innerHTML = t.destinations.length ? `<table><caption>Candidate markets ranked by Korean K-food exports over the last 12 months (관세청).</caption>
+  document.getElementById("tr-dest").innerHTML = t.destinations.length ? `<table class="dest"><caption>Candidate markets ranked by Korean K-food exports over the last 12 months (관세청).</caption>
     <thead><tr><th scope="col">Country</th><th class="bar-cell" scope="col">Last 12 months</th><th class="num" scope="col">12 months before</th><th class="num" scope="col">Change</th></tr></thead><tbody>${
     t.destinations.map(d => `<tr class="link" data-href="#/country/${esc(d.iso3)}/all"><td><a class="row-link" href="#/country/${esc(d.iso3)}/all">${esc(d.name)}</a>${d.hub ? ' <span class="pill">re-export hub</span>' : ""}</td>
       <td><div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(d.last12_usd / maxDest * 100).toFixed(1)}%"></span></div><b>${money(d.last12_usd)}</b></div></td>
