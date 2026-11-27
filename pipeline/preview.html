@@ -105,6 +105,7 @@
   th { text-align: left; color: var(--ink-2); font-weight: 600; font-size: 13px; padding: 6px 10px 8px 0; border-bottom: 1px solid var(--axis); white-space: nowrap; }
   td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--grid); vertical-align: middle; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.rank-col, td.rank-col { width: 4.5rem; text-align: left; font-variant-numeric: tabular-nums; padding-left: 4px; }
   tbody tr:hover td { background: var(--wash); }
   tr.is-top td:nth-child(2) { font-weight: 700; }
   .bar-cell { width: 30%; min-width: 150px; }
@@ -441,9 +442,9 @@ function renderRanking(st) {
   if (!rows.length) { el.innerHTML = `<div class="empty">No countries scored yet.</div>`; return; }
   const max = Math.max(...rows.map(r => r.score));
   el.innerHTML = `<table><caption>${esc(CATEGORIES[category])}: ${rows.length} countries. Select a country for the full detail.</caption>
-    <thead><tr><th class="num" scope="col">Rank</th><th scope="col">Country</th><th class="bar-cell" scope="col">Score (0–100)</th></tr></thead><tbody>${
+    <thead><tr><th class="rank-col" scope="col">Rank</th><th scope="col">Country</th><th class="bar-cell" scope="col">Score (0–100)</th></tr></thead><tbody>${
     rows.map((r, i) => `<tr class="link ${i < 3 ? "is-top" : ""}" data-href="#/country/${esc(r.iso3)}/${category}">
-        <td class="num">${r.rank}</td>
+        <td class="rank-col">${r.rank}</td>
         <td><a class="row-link" href="#/country/${esc(r.iso3)}/${category}">${esc(r.reasons?.name || r.iso3)}</a></td>
         <td><div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(r.score / max * 100).toFixed(1)}%"></span></div><b>${r.score.toFixed(1)}</b></div></td></tr>`).join("")
   }</tbody></table>`;
