@@ -98,3 +98,109 @@ def test_custom_weights_drive_the_top3_probabilities(features):
     got = screen(features, variant="corrected", weights=growth_only)
 
     assert set(got.index[:3]) == set(got.top3_probability.nlargest(3).index)
+
+
+def test_presets_reproduce_the_two_strategy_lenses_in_the_analysis(features):
+    # 03 §3: "Canada wins if size and stability matter more; India wins if growth matters most"
+    from pipeline.indicators import PRESETS
+
+    scale = screen(features, weights=pd.Series(PRESETS["scale"]["weights"]), draws=200)
+    growth = screen(features, weights=pd.Series(PRESETS["growth"]["weights"]), draws=200)
+
+    assert list(scale.index[:3]) == ["USA", "CHN", "CAN"] and "JPN" in scale.index[:6]
+    assert "IND" in growth.index[:3] and {"PHL", "MYS", "VNM"} <= set(growth.index[:6])
+
+
+def test_every_preset_has_a_label_and_weights_that_sum_to_one():
+    from pipeline.indicators import PRESETS, WEIGHTS
+
+    assert PRESETS["default"]["weights"] == WEIGHTS.to_dict()
+    for p in PRESETS.values():
+        assert p["label"] and abs(sum(p["weights"].values()) - 1) < 1e-9 and set(p["weights"]) == set(PILLARS)
+
+
+def kcs_month_rows(months, partner, hs6, value):
+    return pd.DataFrame(
+        [
+            {
+                "source": "kcs_monthly",
+                "reporter_iso3": "KOR",
+                "partner_iso3": partner,
+                "flow": "X",
+                "hs": hs6,
+                "freq": "M",
+                "period": p,
+                "value_usd": value,
+                "net_kg": 1.0,
+                "imputed": False,
+            }
+            for p in months
+        ]
+    )
+
+
+def months_between(start, end):
+    y, m, out = int(start[:4]), int(start[4:]), []
+    while f"{y}{m:02d}" <= end:
+        out.append(f"{y}{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def test_provisional_year_adds_the_latest_12_months_of_korean_exports_as_the_next_year():
+    from pipeline.indicators import with_provisional_year
+
+    trade, _ = load_tables()  # annual Korea-reported exports through 2025
+    monthly = kcs_month_rows(months_between("202501", "202610"), "USA", "190590", 1.0e6)
+
+    out, meta = with_provisional_year(pd.concat([trade, monthly], ignore_index=True))
+
+    added = out[(out.source == "kcs_ttm") & (out.partner_iso3 == "USA")]
+    assert meta == {"year": 2026, "through": "2026-10", "window": "2025-11 to 2026-10"}
+    assert added[["reporter_iso3", "flow", "hs", "freq", "period"]].values.tolist() == [
+        ["KOR", "X", "1905", "A", "2026"]
+    ]
+    assert added.value_usd.iloc[0] == 12 * 1.0e6  # November 2025 to October 2026
+
+
+def test_no_provisional_year_without_12_months_beyond_the_annual_data():
+    from pipeline.indicators import with_provisional_year
+
+    trade, _ = load_tables()
+    monthly = kcs_month_rows(months_between("202501", "202512"), "USA", "190590", 1.0e6)
+
+    out, meta = with_provisional_year(pd.concat([trade, monthly], ignore_index=True))
+
+    assert meta is None and len(out) == len(trade) + 12
+
+
+def test_the_provisional_year_drives_korean_momentum_and_keeps_other_pillars():
+    from pipeline.indicators import with_provisional_year
+
+    trade, indicators = load_tables()
+    monthly = kcs_month_rows(months_between("202501", "202610"), "USA", "190590", 3.0e7)
+
+    f = build_features(with_provisional_year(pd.concat([trade, monthly], ignore_index=True))[0], indicators)
+
+    assert f.loc["USA", "kr_latest_year"] == 2026 and f.loc["USA", "kr_exports_latest_musd"] == 360.0
+    assert f.loc["USA", "latest_year"] == 2025  # partner imports: no 2026 data yet
+
+
+def test_provisional_year_can_end_at_an_earlier_month_for_month_on_month_comparison():
+    from pipeline.indicators import with_provisional_year
+
+    trade, _ = load_tables()
+    monthly = pd.concat(
+        [
+            kcs_month_rows(months_between("202501", "202609"), "USA", "190590", 1.0e6),
+            kcs_month_rows(["202610"], "USA", "190590", 5.0e6),
+        ],
+        ignore_index=True,
+    )
+
+    latest, meta = with_provisional_year(pd.concat([trade, monthly], ignore_index=True))
+    earlier, meta_prev = with_provisional_year(pd.concat([trade, monthly], ignore_index=True), through="202609")
+
+    usa = lambda t: t[(t.source == "kcs_ttm") & (t.partner_iso3 == "USA")].value_usd.iloc[0]
+    assert (usa(earlier), meta_prev["through"]) == (12 * 1.0e6, "2026-09")
+    assert (usa(latest), meta["through"]) == (11 * 1.0e6 + 5.0e6, "2026-10")

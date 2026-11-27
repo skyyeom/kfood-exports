@@ -32,18 +32,24 @@ def _week(now: datetime) -> tuple[str, str]:
     return f"{year}-W{week:02d}", f"Week {week}, {year} ({span})"
 
 
-def _headline(top3: list[dict], previous: list[dict] | None, movers: list[dict]) -> str:
+def _month_label(month: dict) -> str:
+    name = lambda ym: datetime.strptime(ym, "%Y-%m").strftime("%b")
+    return f"{name(month['previous']['through'])} → {name(month['latest']['through'])} {month['latest']['through'][:4]}"
+
+
+def _headline(top3: list[dict], movers: list[dict], month: dict | None, new_month: bool) -> str:
     names = ", ".join(c["name"] for c in top3)
-    if previous is None:
-        return f"First report. Current TOP3: {names}."
-    before = [c["iso3"] for c in sorted(previous, key=lambda c: c["rank"])[:3]]
+    if not new_month:
+        return f"No new monthly data this week. TOP3: {names}."
+    label = _month_label(month)
+    before = sorted(month["ranks"]["all"], key=month["ranks"]["all"].get)[:3]
     if before == [c["iso3"] for c in top3]:
-        lead = f"TOP3 unchanged: {names}."
+        lead = f"New 관세청 month ({label}): TOP3 unchanged, {names}."
     else:
         entered = [c["name"] for c in top3 if c["iso3"] not in before]
         left = [_name(i) for i in before if i not in {c["iso3"] for c in top3}]
-        lead = f"TOP3 is now {names}" + (
-            f": {', '.join(entered)} in, {', '.join(left)} out." if entered else " (order changed)."
+        lead = f"New 관세청 month ({label}): TOP3 is now {names}" + (
+            f"; {', '.join(entered)} in, {', '.join(left)} out." if entered else " (order changed)."
         )
     big = [m for m in movers if abs(m["change"]) >= 2][:2]
     if big:
@@ -61,7 +67,11 @@ def build_report(store: Store, now: datetime | None = None) -> dict:
     now = now or datetime.now(UTC)
     week, title = _week(now)
     current = store.latest_ranking()
-    previous = store.ranking_before((now - timedelta(days=7)).isoformat(timespec="milliseconds"))
+    # Rank changes are month on month, reported once: when a 관세청 month newer than the last report's arrives
+    month = store.latest_ranking(variant="month_change")
+    reported = [store.get_report(r["week"]) for r in store.list_reports() if r["week"] != week]
+    last_month_reported = next((r.get("data_month") for r in reported if r and r.get("data_month")), None)
+    new_month = bool(month) and month["latest"]["through"] != last_month_reported
 
     top3 = [
         {
@@ -75,8 +85,8 @@ def build_report(store: Store, now: datetime | None = None) -> dict:
         for c in current[:3]
     ]
     movers = []
-    if previous is not None:
-        was = {c["iso3"]: c["rank"] for c in previous}
+    if new_month:
+        was = month["ranks"]["all"]
         movers = sorted(
             (
                 {
@@ -139,8 +149,10 @@ def build_report(store: Store, now: datetime | None = None) -> dict:
         "week": week,
         "title": title,
         "generated_at": now.isoformat(timespec="seconds"),
-        "headline": _headline(top3, previous, movers),
-        "first_report": previous is None,
+        "headline": _headline(top3, movers, month, new_month),
+        "new_month": new_month,
+        "data_month": month["latest"]["through"] if month else None,
+        "month_label": _month_label(month) if month else None,
         "top3": top3,
         "movers": movers[:8],
         "exports": exports,
@@ -180,12 +192,13 @@ def to_markdown(r: dict) -> str:
         f"{c['rank']}. **{c['name']}** (score {c['score']:.1f}, {c['confidence']}): {c['headline']}" for c in r["top3"]
     ]
     lines += ["", "## Rank changes", ""]
-    if r["movers"]:
+    if not r.get("new_month"):
+        lines.append("- No new monthly data this week; 관세청 publishes the next month around the 15th.")
+    elif r["movers"]:
+        lines.append(f"Month on month, {r['month_label']} data:")
         lines += [f"- {m['name']}: #{m['was']} → #{m['now']} ({m['change']:+d})" for m in r["movers"]]
     else:
-        lines.append(
-            "- First report: nothing to compare yet." if r["first_report"] else "- No rank changes since last week."
-        )
+        lines.append(f"- No rank changes, {r['month_label']} data.")
     lines += ["", "## Exports", ""]
     if r["exports"]:
         e = r["exports"]
@@ -197,7 +210,10 @@ def to_markdown(r: dict) -> str:
         if e["fastest_destinations"]:
             lines.append(
                 "- Fastest-growing destinations (12 months, ≥ US$5M): "
-                + ", ".join(f"{d['name']} {_pct(d['growth'])}" for d in e["fastest_destinations"])
+                + ", ".join(
+                    f"{d['name']}{' (re-export hub)' if d.get('hub') else ''} {_pct(d['growth'])}"
+                    for d in e["fastest_destinations"]
+                )
             )
     else:
         lines.append("No 관세청 monthly data loaded.")

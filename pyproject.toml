@@ -15,17 +15,18 @@ dependencies = [
     "pandera>=0.20",
     "pyyaml>=6.0",
     "openpyxl>=3.1",
+    "fpdf2>=2.8",
 ]
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
-dev = ["pytest>=8", "ruff>=0.5"]
+dev = ["pytest>=8", "ruff>=0.5", "pypdf>=4"]
 
 [tool.setuptools]
 packages = ["pipeline", "pipeline.sources"]
 
 [tool.setuptools.package-data]
-pipeline = ["tariff_overrides.yaml", "preview.html"]
+pipeline = ["tariff_overrides.yaml", "preview.html", "login.html", "score.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

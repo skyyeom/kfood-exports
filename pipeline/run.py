@@ -21,7 +21,14 @@ from pipeline.bi import refresh_bi_tables
 from pipeline.db import Store, UpsertResult
 from pipeline.forecast import trends
 from pipeline.http import Http
-from pipeline.indicators import InsufficientData, rankings
+from pipeline.indicators import (
+    CATEGORIES,
+    InsufficientData,
+    build_features,
+    rankings,
+    screen,
+    with_provisional_year,
+)
 from pipeline.raw import LocalRawStore, RecordingHttp, SupabaseRawStore
 from pipeline.schema import validate
 from pipeline.sources import SOURCES
@@ -52,12 +59,31 @@ def _row_counts(changes: UpsertResult) -> dict[str, int]:
     return {f"rows_{k}": v for k, v in asdict(changes).items()}
 
 
+def _save_month_change(store: Store, run_id: str, raw, indicators, latest: dict) -> None:
+    """Ranks on the 12-month window ending one month earlier, so the dashboard can show e.g. "Sep → Oct" change."""
+    y, m = map(int, latest["through"].split("-"))
+    prev = f"{y - (m == 1)}{(m - 2) % 12 + 1:02d}"
+    earlier, previous = with_provisional_year(raw, through=prev)
+    if not previous:
+        return
+    ranks = {
+        category: {
+            iso: i + 1 for i, iso in enumerate(screen(build_features(earlier, indicators, hs=codes), draws=1).index)
+        }
+        for category, codes in CATEGORIES.items()
+    }
+    store.save_ranking(
+        run_id, "all", "month_change", "default", {"latest": latest, "previous": previous, "ranks": ranks}
+    )
+
+
 def _rerank(store: Store, run_id: str, force: bool = False) -> None:
     """Re-rank when scoring inputs changed since the last ranking, so a ranking missed earlier is caught up."""
     if not force and not store.ranking_is_stale():
         store.log_event(run_id, "rerank", "skipped", message="no trade or macro data changed")
         return
-    trade, indicators = store.read("trade_flows"), store.read("country_indicators")
+    raw, indicators = store.read("trade_flows"), store.read("country_indicators")
+    trade, provisional = with_provisional_year(raw)  # latest 12 months of 관세청 exports as the next year
     try:
         by_category = rankings(trade, indicators)
     except InsufficientData as e:
@@ -65,7 +91,10 @@ def _rerank(store: Store, run_id: str, force: bool = False) -> None:
         return
     for category, rows in by_category.items():
         store.save_ranking(run_id, category, "corrected", "default", rows)
-    store.save_ranking(run_id, "all", "trend", "default", trends(trade, indicators))
+    for category, codes in CATEGORIES.items():
+        store.save_ranking(run_id, category, "trend", "default", trends(trade, indicators, hs=codes))
+    if provisional:
+        _save_month_change(store, run_id, raw, indicators, provisional)
     refresh_bi_tables(store)
     top3 = [r["iso3"] for r in by_category["all"][:3]]
     store.log_event(run_id, "rerank", metrics={"categories": len(by_category), "top3": top3})

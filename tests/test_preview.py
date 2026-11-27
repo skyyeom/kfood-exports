@@ -9,8 +9,8 @@ from pipeline.preview import country_state, next_run, state, trends_state
 from pipeline.run import run_sources
 
 
-def seeded_store():
-    s = Store("sqlite://")
+def seeded_store(url="sqlite://"):
+    s = Store(url)
     s.create_all()
     trade, indicators = load_tables()
     run_sources(
@@ -125,29 +125,31 @@ def country_store():
     return s
 
 
-def test_country_page_has_the_name_rank_and_reasons():
-    c = country_state(country_store(), "USA")
+def test_country_page_has_the_name_rank_and_reasons(shared_country_store):
+    c = country_state(shared_country_store, "USA")
 
     assert (c["name"], c["ranking"]["all"]["rank"]) == ("United States", 1)
     assert c["ranking"]["all"]["reasons"]["confidence"]["level"] == "robust"
 
 
-def test_country_page_shows_monthly_korean_exports_by_category():
-    months = {(m["category"], m["period"]): m["value_usd"] for m in country_state(country_store(), "USA")["monthly"]}
+def test_country_page_shows_monthly_korean_exports_by_category(shared_country_store):
+    months = {
+        (m["category"], m["period"]): m["value_usd"] for m in country_state(shared_country_store, "USA")["monthly"]
+    }
 
     assert months[("2105", "202610")] == 4664249.0
     assert months[("1905", "202610")] == 12.0e6  # HS6 lines 190531 + 190590 summed into the heading
 
 
-def test_country_page_shows_foods_share_of_koreas_exports():
-    share = country_state(country_store(), "USA")["food_share"]
+def test_country_page_shows_foods_share_of_koreas_exports(shared_country_store):
+    share = country_state(shared_country_store, "USA")["food_share"]
 
     assert share["period"] == "202610"
     assert share["share"] == (4664249.0 + 12.0e6) / 10.0e9
 
 
-def test_country_page_applies_the_tariff_rule_mfn_or_fta_plus_additional_duties():
-    [sugar] = [t for t in country_state(country_store(), "USA")["tariffs"] if t["hs"] == "1704"]
+def test_country_page_applies_the_tariff_rule_mfn_or_fta_plus_additional_duties(shared_country_store):
+    [sugar] = [t for t in country_state(shared_country_store, "USA")["tariffs"] if t["hs"] == "1704"]
 
     # min(MFN average 6%, KORUS 0%) + 15% reciprocal = 15%
     assert (sugar["mfn_pct"], sugar["preferential_pct"], sugar["additional_pct"], sugar["applied_pct"]) == (
@@ -158,11 +160,11 @@ def test_country_page_applies_the_tariff_rule_mfn_or_fta_plus_additional_duties(
     )
 
 
-def test_unknown_country_is_rejected():
+def test_unknown_country_is_rejected(shared_country_store):
     import pytest
 
     with pytest.raises(KeyError):
-        country_state(country_store(), "XXX")
+        country_state(shared_country_store, "XXX")
 
 
 def test_tariffs_warn_when_an_fta_exists_but_its_rates_are_not_entered():
@@ -189,7 +191,7 @@ def test_tariffs_warn_when_an_fta_exists_but_its_rates_are_not_entered():
 
 
 def test_state_includes_the_score_trend_and_forecast():
-    trend = state(seeded_store())["trend"]
+    trend = state(seeded_store())["trend"]["all"]
 
     assert max(r["year"] for r in trend["history"]) == 2025 and min(r["year"] for r in trend["forecast"]) == 2026
 
@@ -270,3 +272,174 @@ def test_trends_include_commodity_prices_with_change_over_a_year():
     assert (cocoa["commodity"], cocoa["unit"], cocoa["latest_month"]) == ("cocoa", "USD/kg", "2026-10")
     assert cocoa["yoy"] == pytest.approx((5.0 + 2.3) / (5.0 + 1.1) - 1)
     assert len(cocoa["series"]) == 24
+
+
+def count_queries(store, fn):
+    import sqlalchemy as sa
+
+    seen = []
+    listener = lambda *a, **k: seen.append(1)
+    sa.event.listen(store.engine, "before_cursor_execute", listener)
+    try:
+        fn()
+    finally:
+        sa.event.remove(store.engine, "before_cursor_execute", listener)
+    return len(seen)
+
+
+def test_a_dashboard_refresh_makes_a_small_fixed_number_of_queries():
+    # Regression: one refresh made ~55 round trips (a query per run for events and for revisions) and read whole
+    # tables to count rows; against Supabase that took 10.5 s and the browser abandoned the requests
+    store = seeded_store()
+    for _ in range(20):
+        run_sources([StaticSource("fx", "fx_rates", fx_rows())], store, http=None)
+
+    assert count_queries(store, lambda: state(store)) <= 15
+
+
+def test_state_counts_rows_without_reading_whole_tables():
+    store = seeded_store()
+
+    assert state(store)["rows"]["trade_flows"] == len(store.read("trade_flows"))
+
+
+def test_a_country_page_fetches_only_that_countrys_rows(shared_country_store):
+    store = shared_country_store
+    import sqlalchemy as sa
+
+    statements = []
+    listener = lambda conn, cur, stmt, *a: statements.append(stmt)
+    sa.event.listen(store.engine, "before_cursor_execute", listener)
+    try:
+        country_state(store, "USA")
+    finally:
+        sa.event.remove(store.engine, "before_cursor_execute", listener)
+
+    trade_reads = [s for s in statements if "FROM trade_flows" in s]
+    assert len(statements) <= 6 and trade_reads and all("WHERE" in s for s in trade_reads)
+
+
+@pytest.fixture(scope="module")
+def last_week():
+    return state(store_with_last_week())
+
+
+@pytest.fixture(scope="module")
+def shared_country_store():
+    return country_store()
+
+
+def save_month_change(store, moved=None, latest="2026-10", previous="2026-09"):
+    """Record ranks on the previous month's 12-month window: today's ranks, except the `moved` countries."""
+    current = store.latest_ranking()
+    ranks = {c: {r["iso3"]: r["rank"] for r in current} for c in ("all", "1704", "1806", "1905", "2105")}
+    ranks["all"].update(moved or {})
+    window = lambda end: f"{int(end[:4]) - 1}-{int(end[5:]) % 12 + 1:02d} to {end}"
+    store.save_ranking(
+        "m",
+        "all",
+        "month_change",
+        "default",
+        {
+            "latest": {"year": 2026, "through": latest, "window": window(latest)},
+            "previous": {"year": 2026, "through": previous, "window": window(previous)},
+            "ranks": ranks,
+        },
+    )
+
+
+def store_with_last_week():
+    store = country_store()  # USA exports, US tariffs incl. KORUS and the 15% reciprocal tariff
+    world = [
+        {
+            "source": "kcs_monthly",
+            "reporter_iso3": "KOR",
+            "partner_iso3": "WLD",
+            "flow": "X",
+            "hs": "210500",
+            "freq": "M",
+            "period": p,
+            "value_usd": v,
+            "net_kg": 1.0,
+            "imputed": False,
+        }
+        for p, v in (("202510", 8.0e7), ("202610", 1.0e8))
+    ]
+    run_sources([StaticSource("kcs_monthly", "trade_flows", world)], store, http=None)
+    save_month_change(store, {"PHL": 5, "IND": 3})
+    return store
+
+
+def test_ranking_rows_carry_the_monthly_and_yearly_change(last_week):
+    rows = {r["iso3"]: r for r in last_week["ranking"]["all"]}
+
+    assert (rows["PHL"]["rank_change_month"], rows["IND"]["rank_change_month"], rows["USA"]["rank_change_month"]) == (
+        2,
+        -1,
+        0,
+    )
+    assert all("rank_change_year" in r for r in rows.values())
+    assert "rank_change" not in rows["USA"]  # no weekly comparison any more
+
+
+def test_kpis_give_the_latest_exports_alerts_and_how_stable_the_top3_is(last_week):
+    k = last_week["kpis"]
+
+    assert k["exports"]["period"] == "202610" and k["exports"]["value_usd"] == 1.0e8
+    assert k["exports"]["yoy"] == pytest.approx(0.25)
+    assert k["alerts"] >= 1  # the Philippines entered the TOP3
+    assert k["top3_robust"] == 2  # USA and China robust, the Philippines depends on priorities
+
+
+def test_top3_cards_get_each_markets_latest_exports(last_week):
+    usa = last_week["exports_by_country"]["USA"]
+
+    assert (usa["period"], usa["value_usd"]) == ("202610", 4664249.0 + 12.0e6)
+
+
+def test_next_steps_come_from_tariffs_and_caveats(last_week):
+    steps = last_week["next_steps"]
+
+    assert any("15% US reciprocal tariff" in s for s in steps["USA"])
+    assert any("AKFTA" in s and "preferential rate" in s for s in steps["PHL"])
+    assert any("depends on" in s for s in steps["PHL"])
+
+
+def test_trends_and_forecasts_follow_the_selected_category(last_week):
+    trends = last_week["trend"]
+
+    assert set(trends) == {"all", "1704", "1806", "1905", "2105"}
+    assert trends["2105"]["history"] != trends["all"]["history"]
+
+
+def test_state_offers_the_scoring_presets():
+    presets = state(seeded_store())["presets"]
+
+    assert list(presets) == ["default", "scale", "growth"] and presets["scale"]["label"] == "Scale markets"
+
+
+def test_yearly_change_compares_the_last_two_years_of_data():
+    st = state(seeded_store())
+    ranks_2024 = {r["iso3"]: r["rank"] for r in st["trend"]["all"]["history"] if r["year"] == 2024}
+
+    rows = {r["iso3"]: r for r in st["ranking"]["all"]}
+    assert st["change_basis"]["all"]["year"] == "2024 → 2025 data"
+    assert rows["PHL"]["rank_change_year"] == ranks_2024["PHL"] - rows["PHL"]["rank"]
+
+
+def test_without_monthly_data_there_is_no_monthly_change():
+    st = state(seeded_store())
+
+    assert st["change_basis"]["all"]["month"] is None
+    assert all(r["rank_change_month"] is None for r in st["ranking"]["all"])
+
+
+def test_monthly_change_compares_the_two_latest_12_month_windows(last_week):
+    assert last_week["change_basis"]["all"]["month"] == "Sep → Oct 2026 data"
+    assert last_week["provisional"]["through"] == "2026-10"
+
+
+def test_destinations_say_which_are_re_export_hubs():
+    t = trends_state(trends_store())
+
+    assert all("hub" in d for d in t["destinations"])

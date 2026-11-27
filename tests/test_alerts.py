@@ -1,9 +1,9 @@
-"""Alerts for the current top markets: rank moves, TOP3 changes, export swings and tariff revisions."""
+"""Alerts for the current top markets: monthly rank moves, TOP3 changes, export swings and tariff revisions."""
 
 from datetime import UTC, datetime
 
 import pytest
-from test_preview import months, seeded_store
+from test_preview import months, save_month_change, seeded_store
 from test_run import StaticSource
 
 from pipeline.alerts import market_alerts
@@ -15,9 +15,7 @@ NOW = datetime(2026, 11, 25, 12, tzinfo=UTC)
 @pytest.fixture
 def store():
     s = seeded_store()
-    current = s.latest_ranking()
-    earlier = [dict(c, rank={"PHL": 5, "IND": 3}.get(c["iso3"], c["rank"])) for c in current]
-    s.save_ranking("old-run", "all", "corrected", "default", earlier, computed_at="2026-11-17T00:00:00.000+00:00")
+    save_month_change(s, {"PHL": 5, "IND": 3})  # last month's ranks
     flows = [
         {
             "source": "kcs_monthly",
@@ -32,7 +30,7 @@ def store():
             "imputed": False,
         }
         for iso, v in (("PHL", 1.0e6), ("USA", 1.0e7))
-        for i, p in enumerate(months())
+        for i, p in enumerate(months(start=(2024, 1)))  # inside the annual data: no provisional year
     ]
     run_sources([StaticSource("kcs_monthly", "trade_flows", flows)], s, http=None)
     return s

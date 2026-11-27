@@ -13,6 +13,19 @@ from pipeline.config import HS, HUBS, NOT_IN_WORLD_BANK, SANCTIONED
 WEIGHTS = pd.Series({"Market growth": 0.30, "Market size": 0.25, "K-momentum (trade)": 0.30, "Entry ease": 0.15})
 DRAWS = 5000
 
+# Strategy lenses from docs/pm/03_data_analysis.md §3 (FR-1.2); users can also set their own weights
+PRESETS = {
+    "default": {"label": "Balanced (default)", "weights": WEIGHTS.to_dict()},
+    "scale": {
+        "label": "Scale markets",
+        "weights": {"Market growth": 0.10, "Market size": 0.40, "K-momentum (trade)": 0.35, "Entry ease": 0.15},
+    },
+    "growth": {
+        "label": "Growth / entry markets",
+        "weights": {"Market growth": 0.45, "Market size": 0.10, "K-momentum (trade)": 0.25, "Entry ease": 0.20},
+    },
+}
+
 
 def cagr(first: float, last: float, years: int) -> float:
     if first is None or last is None or first <= 0 or last <= 0 or years <= 0:
@@ -35,6 +48,46 @@ def covered_until(rows: pd.DataFrame, share: float = 0.9) -> int | None:
         return None
     per_year = rows.groupby("year").iso3.nunique()
     return int(per_year[per_year >= share * rows.iso3.nunique()].index.max())
+
+
+def with_provisional_year(trade: pd.DataFrame, through: str | None = None) -> tuple[pd.DataFrame, dict | None]:
+    """Add the latest 12 months of 관세청 Korean exports as a provisional annual year.
+
+    Annual (Comtrade) data ends at year Y; 관세청 monthly data runs months beyond it. When 12 months ending after Y
+    exist, their sums by destination and HS4 are added as year Y+1 (source "kcs_ttm"), so Korean export momentum
+    uses the freshest data while pillars without newer data keep their latest year. `through` (YYYYMM) ends the
+    window at an earlier month, for month-on-month comparison. 관세청 and Comtrade agree exactly on annual totals.
+    """
+    annual_kr = trade[
+        (trade.freq == "A") & (trade.flow == "X") & (trade.reporter_iso3 == "KOR") & (trade.source != "kcs_ttm")
+    ]
+    monthly = trade[(trade.source == "kcs_monthly") & (trade.flow == "X") & (trade.freq == "M")]
+    if annual_kr.empty or monthly.empty:
+        return trade, None
+    last_annual = int(annual_kr.period.astype(int).max())
+    months = sorted(p for p in monthly.period.unique() if through is None or p <= through)
+    if not months or int(months[-1][:4]) <= last_annual:
+        return trade, None
+    window = months[-12:]
+    if (
+        len(window) < 12
+        or int(window[-1][:4]) * 12 + int(window[-1][4:]) - (int(window[0][:4]) * 12 + int(window[0][4:])) != 11
+    ):
+        return trade, None  # 12 consecutive months are needed
+    ttm = (
+        monthly[monthly.period.isin(window)]
+        .assign(hs=lambda d: d.hs.str[:4])
+        .groupby(["partner_iso3", "hs"], as_index=False)[["value_usd", "net_kg"]]
+        .sum()
+    )
+    year = last_annual + 1
+    rows = ttm.assign(source="kcs_ttm", reporter_iso3="KOR", flow="X", freq="A", period=str(year), imputed=False)
+    meta = {
+        "year": year,
+        "through": f"{window[-1][:4]}-{window[-1][4:]}",
+        "window": f"{window[0][:4]}-{window[0][4:]} to {window[-1][:4]}-{window[-1][4:]}",
+    }
+    return pd.concat([trade, rows[trade.columns.intersection(rows.columns)]], ignore_index=True), meta
 
 
 class InsufficientData(Exception):
