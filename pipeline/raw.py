@@ -57,14 +57,9 @@ class SupabaseRawStore:
 
         self.base, self.bucket = url.rstrip("/"), bucket
         self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "Authorization": f"Bearer {service_key}",
-                "apikey": service_key,
-                "x-upsert": "true",
-                "Content-Type": "application/zip",
-            }
-        )
+        self.session.headers.update({"apikey": service_key, "x-upsert": "true", "Content-Type": "application/zip"})
+        if not service_key.startswith("sb_secret_"):  # legacy service_role keys are JWTs and also go as Bearer
+            self.session.headers["Authorization"] = f"Bearer {service_key}"
 
     def put(self, key: str, data: bytes) -> str:
         path = f"{self.bucket}/{key.removeprefix('raw/')}"
