@@ -34,12 +34,13 @@ def hash_password(password: str) -> str:
         raise ValueError(f"Use at least {MIN_PASSWORD} characters.")
     salt = secrets.token_bytes(16)
     key = hashlib.scrypt(password.encode(), salt=salt, n=_N, r=_R, p=_P, dklen=32)
-    return f"scrypt${_N}${_R}${_P}${_b64(salt)}${_b64(key)}"
+    # ":" separators: a "$" would be expanded when a shell loads .env (set -a; . ./.env)
+    return f"scrypt:{_N}:{_R}:{_P}:{_b64(salt)}:{_b64(key)}"
 
 
 def verify_password(password: str, stored: str) -> bool:
     try:
-        scheme, n, r, p, salt, key = stored.split("$")
+        scheme, n, r, p, salt, key = stored.replace("$", ":").split(":")  # "$" = the earlier format
         if scheme != "scrypt":
             return False
         derived = hashlib.scrypt(

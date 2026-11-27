@@ -15,7 +15,7 @@ def test_correct_password_verifies_and_wrong_one_does_not():
 def test_hash_never_contains_the_password_and_differs_each_time():
     a, b = hash_password("s3cret-pass"), hash_password("s3cret-pass")
 
-    assert "s3cret-pass" not in a and a != b and a.startswith("scrypt$")
+    assert "s3cret-pass" not in a and a != b and a.startswith("scrypt:")
 
 
 def test_malformed_stored_hash_is_rejected_not_crashing():
@@ -67,3 +67,24 @@ def test_a_successful_login_clears_earlier_failures():
 def test_too_short_passwords_are_refused(password):
     with pytest.raises(ValueError):
         hash_password(password)
+
+
+def test_hash_survives_being_loaded_from_env_by_a_shell(tmp_path):
+    # Regression: "scrypt$16384$8$1$..." was mangled by `set -a; . ./.env` ($1, $8 … expand), so every
+    # sign-in failed with "Wrong username or password."
+    import subprocess
+
+    stored = hash_password("correct horse battery")
+    env = tmp_path / ".env"
+    env.write_text(f"DASHBOARD_PASSWORD_HASH={stored}\n")
+
+    loaded = subprocess.run(["bash", "-c", f'set -a; . "{env}"; printf %s "$DASHBOARD_PASSWORD_HASH"'],
+                            capture_output=True, text=True, check=True).stdout
+
+    assert loaded == stored and verify_password("correct horse battery", loaded)
+
+
+def test_hashes_in_the_earlier_dollar_format_still_verify():
+    legacy = hash_password("correct horse battery").replace(":", "$")
+
+    assert verify_password("correct horse battery", legacy)

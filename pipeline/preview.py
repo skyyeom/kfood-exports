@@ -211,9 +211,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _login(self) -> None:
         address = self.client_address[0]
+        body = self._read_body()  # read before any reply: an unread request body can reset the connection
         if self.throttle.locked(address):
             return self._send(429, b'{"error": "Too many failed attempts. Wait a minute and try again."}')
-        body = self._read_body()
         user, password = str(body.get("username", "")), str(body.get("password", ""))
         name_ok = hmac.compare_digest(user.encode(), self.username.encode())
         if not (verify_password(password, self.password_hash) and name_ok):
