@@ -114,7 +114,8 @@
   .bar-cell { width: 30%; min-width: 150px; }
   /* destinations: names take only the room they need, so the 12-month bars start further left and run longer */
   .dest th:first-child, .dest td:first-child { width: 1%; white-space: nowrap; padding-right: 20px; }
-  .dest .bar-cell { width: 60%; min-width: 220px; }
+  .dest th.num, .dest td.num { width: 1%; white-space: nowrap; padding-left: 28px; }  /* numbers keep their room */
+  .dest .bar-cell { width: auto; min-width: 200px; padding-right: 8px; }  /* bars take what is left */
   .dest .bar { height: 14px; }
   .bar-wrap { display: flex; align-items: center; gap: 8px; }
   .bar { position: relative; height: 12px; flex: 1; }
