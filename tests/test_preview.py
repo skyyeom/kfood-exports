@@ -401,3 +401,16 @@ def test_state_offers_the_scoring_presets():
     presets = state(seeded_store())["presets"]
 
     assert list(presets) == ["default", "scale", "growth"] and presets["scale"]["label"] == "Scale markets"
+
+
+def test_without_a_week_old_ranking_changes_fall_back_to_last_years_rank():
+    st = state(seeded_store())  # only today's ranking exists
+    trend_2024 = {r["iso3"]: r["rank"] for r in st["trend"]["all"]["history"] if r["year"] == 2024}
+
+    rows = {r["iso3"]: r for r in st["ranking"]["all"]}
+    assert st["change_basis"]["all"] == "2024 → 2025 data"
+    assert rows["PHL"]["rank_change"] == trend_2024["PHL"] - rows["PHL"]["rank"]
+
+
+def test_with_a_week_old_ranking_changes_are_since_last_week(last_week):
+    assert last_week["change_basis"]["all"] == "since last week"

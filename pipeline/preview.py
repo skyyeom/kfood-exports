@@ -91,9 +91,16 @@ def state(store: Store) -> dict:
     latest = store.latest_rankings([(c, v) for c in categories for v in ("corrected", "trend")])
     week_ago = (datetime.now(UTC) - timedelta(days=7)).isoformat(timespec="milliseconds")
     before = store.latest_rankings([(c, "corrected") for c in categories], before=week_ago)
-    ranking = {}
+    ranking, change_basis = {}, {}
     for c in categories:
+        # rank change since last week; until a week-old ranking exists, since last year's annual ranking
         was = {r["iso3"]: r["rank"] for r in before.get((c, "corrected")) or []}
+        change_basis[c] = "since last week"
+        trend = latest.get((c, "trend"))
+        if not was and trend and trend.get("history"):
+            prior = max(r["year"] for r in trend["history"]) - 1
+            was = {r["iso3"]: r["rank"] for r in trend["history"] if r["year"] == prior}
+            change_basis[c] = f"{prior} → {prior + 1} data"  # today's ranking is built on the latest year's data
         ranking[c] = [
             r | {"rank_change": (was[r["iso3"]] - r["rank"]) if r["iso3"] in was else None}
             for r in latest.get((c, "corrected")) or []
@@ -120,6 +127,7 @@ def state(store: Store) -> dict:
         "runs": recent,
         "revisions": _records(store.recent_revisions(25)),
         "ranking": ranking,
+        "change_basis": change_basis,
         "trend": {c: latest.get((c, "trend")) for c in categories if latest.get((c, "trend"))},
         "presets": PRESETS,
         "next_steps": steps,
