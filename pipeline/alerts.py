@@ -62,15 +62,16 @@ def market_alerts(
     current: list[dict] | None = None,
     previous: list[dict] | None = None,
 ) -> list[dict]:
-    """Alerts for the given markets (default: the current top 10), comparing with the ranking a week earlier.
+    """Alerts for the given markets (default: the current top 10); rank moves compare with last month's ranks.
     Pass `current` and `previous` rankings when the caller already has them, to save queries."""
     now = now or datetime.now(UTC)
     week_ago = (now - timedelta(days=7)).isoformat(timespec="milliseconds")
     current = store.latest_ranking() if current is None else current
     rank = {r["iso3"]: r["rank"] for r in current}
-    previous = {
-        r["iso3"]: r["rank"] for r in ((store.ranking_before(week_ago) or []) if previous is None else previous)
-    }
+    if previous is None:  # last month's ranks: the 12-month window ending one month earlier
+        month = store.latest_ranking(variant="month_change") or {}
+        previous = [{"iso3": k, "rank": v} for k, v in (month.get("ranks", {}).get("all") or {}).items()]
+    previous = {r["iso3"]: r["rank"] for r in previous}
     isos = isos or [r["iso3"] for r in current[:top]]
     exports_by_iso = monthly_exports(store, isos)
     tariff_revisions = store.revisions_since(week_ago, "tariffs")

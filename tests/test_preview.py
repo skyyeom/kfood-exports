@@ -1,6 +1,5 @@
 from datetime import UTC, datetime
 
-import pandas as pd
 import pytest
 from analysis_data import load_tables
 from test_run import StaticSource, fx_rows
@@ -330,6 +329,25 @@ def shared_country_store():
     return country_store()
 
 
+def save_month_change(store, moved=None, latest="2026-10", previous="2026-09"):
+    """Record ranks on the previous month's 12-month window: today's ranks, except the `moved` countries."""
+    current = store.latest_ranking()
+    ranks = {c: {r["iso3"]: r["rank"] for r in current} for c in ("all", "1704", "1806", "1905", "2105")}
+    ranks["all"].update(moved or {})
+    window = lambda end: f"{int(end[:4]) - 1}-{int(end[5:]) % 12 + 1:02d} to {end}"
+    store.save_ranking(
+        "m",
+        "all",
+        "month_change",
+        "default",
+        {
+            "latest": {"year": 2026, "through": latest, "window": window(latest)},
+            "previous": {"year": 2026, "through": previous, "window": window(previous)},
+            "ranks": ranks,
+        },
+    )
+
+
 def store_with_last_week():
     store = country_store()  # USA exports, US tariffs incl. KORUS and the 15% reciprocal tariff
     world = [
@@ -348,23 +366,20 @@ def store_with_last_week():
         for p, v in (("202510", 8.0e7), ("202610", 1.0e8))
     ]
     run_sources([StaticSource("kcs_monthly", "trade_flows", world)], store, http=None)
-    current = store.latest_ranking()
-    earlier = [dict(c, rank={"PHL": 5, "IND": 3}.get(c["iso3"], c["rank"])) for c in current]
-    store.save_ranking(
-        "old-run",
-        "all",
-        "corrected",
-        "default",
-        earlier,
-        computed_at=(datetime.now(UTC) - pd.Timedelta(days=8)).isoformat(timespec="milliseconds"),
-    )
+    save_month_change(store, {"PHL": 5, "IND": 3})
     return store
 
 
-def test_ranking_rows_show_the_change_since_last_week(last_week):
+def test_ranking_rows_carry_the_monthly_and_yearly_change(last_week):
     rows = {r["iso3"]: r for r in last_week["ranking"]["all"]}
 
-    assert (rows["PHL"]["rank_change"], rows["IND"]["rank_change"], rows["USA"]["rank_change"]) == (2, -1, 0)
+    assert (rows["PHL"]["rank_change_month"], rows["IND"]["rank_change_month"], rows["USA"]["rank_change_month"]) == (
+        2,
+        -1,
+        0,
+    )
+    assert all("rank_change_year" in r for r in rows.values())
+    assert "rank_change" not in rows["USA"]  # no weekly comparison any more
 
 
 def test_kpis_give_the_latest_exports_alerts_and_how_stable_the_top3_is(last_week):
@@ -403,38 +418,22 @@ def test_state_offers_the_scoring_presets():
     assert list(presets) == ["default", "scale", "growth"] and presets["scale"]["label"] == "Scale markets"
 
 
-def test_without_a_week_old_ranking_changes_fall_back_to_last_years_rank():
-    st = state(seeded_store())  # only today's ranking exists
-    trend_2024 = {r["iso3"]: r["rank"] for r in st["trend"]["all"]["history"] if r["year"] == 2024}
+def test_yearly_change_compares_the_last_two_years_of_data():
+    st = state(seeded_store())
+    ranks_2024 = {r["iso3"]: r["rank"] for r in st["trend"]["all"]["history"] if r["year"] == 2024}
 
     rows = {r["iso3"]: r for r in st["ranking"]["all"]}
-    assert st["change_basis"]["all"] == "2024 → 2025 data"
-    assert rows["PHL"]["rank_change"] == trend_2024["PHL"] - rows["PHL"]["rank"]
+    assert st["change_basis"]["all"]["year"] == "2024 → 2025 data"
+    assert rows["PHL"]["rank_change_year"] == ranks_2024["PHL"] - rows["PHL"]["rank"]
 
 
-def test_with_a_week_old_ranking_changes_are_since_last_week(last_week):
-    assert last_week["change_basis"]["all"] == "since last week"
+def test_without_monthly_data_there_is_no_monthly_change():
+    st = state(seeded_store())
+
+    assert st["change_basis"]["all"]["month"] is None
+    assert all(r["rank_change_month"] is None for r in st["ranking"]["all"])
 
 
-def test_month_on_month_comparison_is_preferred_when_monthly_data_allows():
-    store = seeded_store()
-    current = store.latest_ranking()
-    ranks = {c: {r["iso3"]: r["rank"] for r in current} for c in ("all", "1704", "1806", "1905", "2105")}
-    ranks["all"]["PHL"] = 6
-    store.save_ranking(
-        "m",
-        "all",
-        "month_change",
-        "default",
-        {
-            "latest": {"year": 2026, "through": "2026-10", "window": "2025-11 to 2026-10"},
-            "previous": {"year": 2026, "through": "2026-09", "window": "2025-10 to 2026-09"},
-            "ranks": ranks,
-        },
-    )
-
-    st = state(store)
-
-    phl = next(r for r in st["ranking"]["all"] if r["iso3"] == "PHL")
-    assert st["change_basis"]["all"] == "Sep → Oct 2026 data" and phl["rank_change"] == 3
-    assert st["provisional"]["through"] == "2026-10"
+def test_monthly_change_compares_the_two_latest_12_month_windows(last_week):
+    assert last_week["change_basis"]["all"]["month"] == "Sep → Oct 2026 data"
+    assert last_week["provisional"]["through"] == "2026-10"

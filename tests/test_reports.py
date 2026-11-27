@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from test_preview import seeded_store, trends_store
+from test_preview import save_month_change, seeded_store, trends_store
 
 from pipeline.reports import build_report, to_markdown
 
@@ -17,23 +17,32 @@ def test_report_is_titled_by_iso_week_and_lists_the_current_top3():
     assert r["top3"][0]["headline"].startswith("Leads on market size")
 
 
-def test_first_report_says_there_is_nothing_to_compare_with():
+def test_without_new_monthly_data_the_report_says_so_instead_of_listing_no_changes():
     r = build_report(seeded_store(), now=NOW)
 
-    assert r["movers"] == [] and "first report" in r["headline"].lower()
+    assert r["movers"] == [] and r["new_month"] is False
+    assert "no new monthly data" in to_markdown(r).lower()
 
 
-def test_report_compares_ranks_with_the_ranking_a_week_earlier():
+def test_a_new_month_of_data_brings_month_on_month_rank_changes():
     store = seeded_store()
-    current = store.latest_ranking()
-    earlier = [dict(c, rank={"PHL": 5, "IND": 3}.get(c["iso3"], c["rank"])) for c in current]
-    store.save_ranking("old-run", "all", "corrected", "default", earlier, computed_at="2026-11-16T00:00:00.000+00:00")
+    save_month_change(store, {"PHL": 5, "IND": 3})
 
     r = build_report(store, now=NOW)
 
     phl = next(m for m in r["movers"] if m["iso3"] == "PHL")
-    assert (phl["was"], phl["now"], phl["change"]) == (5, 3, 2)
-    assert "Philippines" in r["headline"] and "India" in r["headline"]
+    assert (phl["was"], phl["now"], phl["change"], r["new_month"]) == (5, 3, 2, True)
+    assert "Sep → Oct" in r["headline"] and "Philippines" in r["headline"]
+
+
+def test_the_same_month_is_not_reported_twice():
+    store = seeded_store()
+    save_month_change(store, {"PHL": 5})
+    store.save_report(build_report(store, now=NOW))
+
+    r = build_report(store, now=datetime(2026, 12, 1, 21, tzinfo=UTC))
+
+    assert r["new_month"] is False and r["movers"] == []
 
 
 def test_report_summarises_the_latest_month_of_exports_and_ingredient_prices():
@@ -76,9 +85,7 @@ def test_reports_are_stored_and_listed_newest_first():
 
 def test_report_lists_alerts_for_the_top_markets():
     store = seeded_store()
-    current = store.latest_ranking()
-    earlier = [dict(c, rank={"PHL": 5, "IND": 3}.get(c["iso3"], c["rank"])) for c in current]
-    store.save_ranking("old-run", "all", "corrected", "default", earlier, computed_at="2026-11-16T00:00:00.000+00:00")
+    save_month_change(store, {"PHL": 5, "IND": 3})
 
     r = build_report(store, now=NOW)
 

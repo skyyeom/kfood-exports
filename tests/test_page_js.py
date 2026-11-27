@@ -45,7 +45,11 @@ vm.runInContext(`
     }
     for (const m of ["rank", "score"]) { trendMode = m; renderTrend(st, true); }
   }
-  category = "all"; preset = "default"; weights = null; renderOverview(st);
+  category = "all"; preset = "default"; weights = null;
+  changeView = "month"; renderOverview(st); out.monthTable = document.getElementById("ranking").innerHTML;
+  out.compare = document.getElementById("compare").innerHTML;
+  changeView = "year"; renderOverview(st); out.yearTable = document.getElementById("ranking").innerHTML;
+  changeView = null; renderOverview(st);
   weights = { "Market growth": 1, "Market size": 0, "K-momentum (trade)": 0, "Entry ease": 0 };
   renderOverview(st);
   out.custom = { summary: document.getElementById("ctrl-summary").textContent,
@@ -100,3 +104,13 @@ def test_kpi_row_shows_exports_stability_alerts_and_data(rendered):
 
 def test_trend_chart_renders_in_rank_mode(rendered):
     assert rendered["trend"].startswith("<svg") and "ranks" in rendered["trend"]
+
+
+def test_change_column_follows_the_month_or_year_toggle(rendered):
+    assert "Change (Sep → Oct 2026 data)" in rendered["monthTable"]
+    assert "Change (2024 → 2025 data" in rendered["yearTable"]
+    assert 'data-compare="month"' in rendered["compare"] and 'data-compare="year"' in rendered["compare"]
+
+
+def test_rank_changes_are_coloured_by_direction(rendered):
+    assert 'class="chg up"' in rendered["monthTable"] and 'class="chg down"' in rendered["monthTable"]

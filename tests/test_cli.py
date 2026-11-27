@@ -98,5 +98,5 @@ def test_report_command_generates_and_stores_this_weeks_report(tmp_path):
 
     assert code == 0
     [report] = store.list_reports()
-    assert report["headline"].startswith("First report")
+    assert report["headline"].startswith("No new monthly data this week")
     assert store.runs().set_index("source").loc["report", "status"] == "success"

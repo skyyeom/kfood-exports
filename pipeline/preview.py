@@ -98,23 +98,24 @@ def state(store: Store) -> dict:
         [(c, v) for c in categories for v in ("corrected", "trend")] + [("all", "month_change")]
     )
     month = latest.get(("all", "month_change"))
-    week_ago = (datetime.now(UTC) - timedelta(days=7)).isoformat(timespec="milliseconds")
-    before = store.latest_rankings([(c, "corrected") for c in categories], before=week_ago)
     ranking, change_basis = {}, {}
     for c in categories:
-        # rank change: month on month when monthly data allows (e.g. Sep → Oct), else since last week,
-        # else between the last two years of annual data
-        was = {r["iso3"]: r["rank"] for r in before.get((c, "corrected")) or []}
-        change_basis[c] = "since last week"
-        trend = latest.get((c, "trend"))
-        if month and month["ranks"].get(c):
-            was, change_basis[c] = month["ranks"][c], _month_label(month)
-        elif not was and trend and trend.get("history"):
-            prior = max(r["year"] for r in trend["history"]) - 1
-            was = {r["iso3"]: r["rank"] for r in trend["history"] if r["year"] == prior}
-            change_basis[c] = f"{prior} → {prior + 1} data"  # today's ranking is built on the latest year's data
+        # two comparisons, chosen on the page: month on month (the two latest 12-month 관세청 windows) and
+        # year on year (the last two years in the score history). Nothing changes week to week.
+        by_month = (month or {}).get("ranks", {}).get(c) or {}
+        history = (latest.get((c, "trend")) or {}).get("history") or []
+        last_year = max((r["year"] for r in history), default=None)
+        by_year = {r["iso3"]: r["rank"] for r in history if r["year"] == (last_year or 0) - 1}
+        change_basis[c] = {
+            "month": _month_label(month) if by_month else None,
+            "year": (f"{last_year - 1} → {last_year} data" + (" (provisional)" if month else "")) if by_year else None,
+        }
         ranking[c] = [
-            r | {"rank_change": (was[r["iso3"]] - r["rank"]) if r["iso3"] in was else None}
+            r
+            | {
+                "rank_change_month": by_month[r["iso3"]] - r["rank"] if r["iso3"] in by_month else None,
+                "rank_change_year": by_year[r["iso3"]] - r["rank"] if r["iso3"] in by_year else None,
+            }
             for r in latest.get((c, "corrected")) or []
         ]
     current_all = ranking["all"]
@@ -123,7 +124,8 @@ def state(store: Store) -> dict:
     watch = list(
         dict.fromkeys([r["iso3"] for r in current_all[:10]] + [r["iso3"] for c in categories for r in ranking[c][:3]])
     )
-    alerts = market_alerts(store, isos=watch, current=current_all, previous=before.get(("all", "corrected")) or [])
+    last_month = [{"iso3": k, "rank": v} for k, v in ((month or {}).get("ranks", {}).get("all") or {}).items()]
+    alerts = market_alerts(store, isos=watch, current=current_all, previous=last_month)
     tariffs = store.read("tariffs")
     today = datetime.now(UTC).date().isoformat()
     rows_by_iso = {r["iso3"]: r for c in reversed(categories) for r in ranking[c]}  # "all" last, so it wins
