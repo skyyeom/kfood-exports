@@ -1,6 +1,6 @@
 # WellGTM: progress and next steps
 
-_Last updated 2026-11-25._
+_Last updated 2026-11-27._
 
 ## Built
 - **Pipeline** (`pipeline/`): scheduled ingestion of UN Comtrade, World Bank WDI, WITS tariffs + overrides, FX, the World Bank Pink Sheet and three 관세청 APIs; validation, revision tracking, run and step logs, raw-response archives, automatic re-ranking, score history and forecast, weekly reports.
@@ -27,7 +27,12 @@ _Last updated 2026-11-25._
 ## Open
 - **Reference design:** the uxplanet article could not be fetched (HTTP 403). Paste its main points or screenshots to use it.
 
+## Supabase (done 2026-11-27)
+- Project in ap-northeast-1. The migration is applied and verified.
+- Full history is loaded: 8 sources, 0 failures. The data has been re-ranked and the first weekly report (2026-W48) is written.
+- The local dashboard reads from Supabase when started with `.env` loaded.
+
 ## Setup still needed
-- Supabase project: run `supabase/migrations/0001_init.sql`, add the GitHub secrets listed in the README.
+- GitHub Actions secrets (needs a repo admin): `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `KCS_API_KEY`. Then merge PR #1 so the schedules run.
 - FTA preferential rates for non-US markets in `pipeline/tariff_overrides.yaml` (needs cited sources); confirm the US 15% start date.
 - Reissue the data.go.kr key (it appeared in chat) and keep it only in `.env` and the `KCS_API_KEY` secret.
