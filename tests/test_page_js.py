@@ -9,16 +9,16 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from test_preview import store_with_last_week
+from test_preview import store_with_last_week, trends_store
 
-from pipeline.preview import state
+from pipeline.preview import state, trends_state
 
 PAGE = Path(__file__).resolve().parents[1] / "pipeline"
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="needs Node")
 
 HARNESS = r"""
 const vm = require("vm"), fs = require("fs");
-const st = JSON.parse(fs.readFileSync(0, "utf8"));
+const input = JSON.parse(fs.readFileSync(0, "utf8")), st = input.state, trends = input.trends;
 const els = {};
 const el = id => els[id] ??= { id, innerHTML: "", textContent: "", hidden: false, dataset: {}, style: {},
   setAttribute() {}, removeAttribute() {}, getAttribute() { return null; }, addEventListener() {},
@@ -26,7 +26,7 @@ const el = id => els[id] ??= { id, innerHTML: "", textContent: "", hidden: false
   appendChild() {}, after() {}, focus() {}, getBoundingClientRect() { return { left: 0, bottom: 0 }; },
   createSVGPoint() { return { matrixTransform: () => ({ x: 0 }) }; }, getScreenCTM() { return { inverse() {} }; } };
 const document = { getElementById: el, querySelector: () => el("q"), querySelectorAll: () => [], addEventListener() {}, title: "" };
-const ctx = { console, document, st, process, location: { hash: "#/overview", replace() {} }, innerWidth: 1200, innerHeight: 800,
+const ctx = { console, document, st, trends, process, location: { hash: "#/overview", replace() {} }, innerWidth: 1200, innerHeight: 800,
   setInterval() {}, addEventListener() {}, fetch: () => new Promise(() => {}), Date, Math, JSON, Number, String,
   Object, Array, Set, Map, Promise, Error };
 ctx.window = ctx; ctx.globalThis = ctx;
@@ -57,6 +57,11 @@ vm.runInContext(`
   out.kpis = document.getElementById("ov-kpis").innerHTML;
   category = "all"; trendMode = "rank"; renderTrend(st, true);
   out.trend = document.getElementById("trend-chart").innerHTML.slice(0, 200);
+  out.top3 = document.getElementById("top3").innerHTML;
+  trendsData = trends; renderTrendsPage();
+  out.destinations = document.getElementById("tr-dest").innerHTML;
+  out.trendKpis = document.getElementById("tr-kpis").innerHTML;
+  out.prices = document.getElementById("tr-com").innerHTML;
   process.stdout.write(JSON.stringify(out));
 `, ctx);
 """
@@ -70,10 +75,14 @@ def rendered(tmp_path_factory):
     script = script.split('fetch("/api/me")')[0]
     path = tmp_path_factory.mktemp("js") / "harness.js"
     path.write_text(HARNESS)
-    st = state(store_with_last_week()) | {"running": []}
+    store = store_with_last_week()
+    payload = {
+        "state": state(store) | {"running": []},
+        "trends": trends_state(trends_store()),
+    }  # 24 months of 관세청 data
     out = subprocess.run(
         ["node", str(path), str(PAGE / "score.js"), script],
-        input=json.dumps(st, default=str),
+        input=json.dumps(payload, default=str),
         capture_output=True,
         text=True,
         check=False,  # a failure is reported below with Node's stderr
@@ -114,3 +123,13 @@ def test_change_column_follows_the_month_or_year_toggle(rendered):
 
 def test_rank_changes_are_coloured_by_direction(rendered):
     assert 'class="chg up"' in rendered["monthTable"] and 'class="chg down"' in rendered["monthTable"]
+
+
+def test_cards_show_rank_changes_only_when_there_is_one(rendered):
+    assert "no change" not in rendered["top3"]
+
+
+def test_trends_page_colours_export_growth_but_not_ingredient_prices(rendered):
+    assert 'class="num up"' in rendered["destinations"] or 'class="num down"' in rendered["destinations"]
+    assert 'class="up"' in rendered["trendKpis"] or 'class="down"' in rendered["trendKpis"]
+    assert 'class="sub price' in rendered["prices"]
