@@ -116,8 +116,8 @@ def test_trend_chart_renders_in_rank_mode(rendered):
 
 
 def test_change_column_follows_the_month_or_year_toggle(rendered):
-    assert "Change (Sep → Oct 2026 data)" in rendered["monthTable"]
-    assert "Change (2024 → 2025 data" in rendered["yearTable"]
+    assert "Change: Sep → Oct 2026 data" in rendered["monthTable"]
+    assert "Change: 2024 → 2025 data" in rendered["yearTable"]
     assert 'data-compare="month"' in rendered["compare"] and 'data-compare="year"' in rendered["compare"]
 
 

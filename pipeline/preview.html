@@ -109,6 +109,10 @@
   td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--grid); vertical-align: middle; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   th.rank-col, td.rank-col { width: 4.5rem; text-align: left; font-variant-numeric: tabular-nums; padding-left: 4px; }
+  /* ranking: change and country take only the width they need, so names and score bars sit further left */
+  .ranking th:nth-child(2), .ranking td:nth-child(2) { width: 1%; white-space: nowrap; padding-right: 16px; }
+  .ranking th:nth-child(3), .ranking td:nth-child(3) { width: 1%; white-space: nowrap; padding-right: 24px; }
+  .ranking .bar-cell { width: auto; }
   tbody tr:hover td { background: var(--wash); }
   tr.is-top td:nth-child(2) { font-weight: 700; }
   .bar-cell { width: 30%; min-width: 150px; }
@@ -584,9 +588,9 @@ function renderRanking(st) {
   document.getElementById("all-h").textContent = showAll ? "All scored markets" : "Top 10 markets";
   if (!rows.length) { el.innerHTML = `<div class="empty">No countries scored yet.</div>`; return; }
   const max = Math.max(...rows.map(r => r.score));
-  const changeHead = isDefault(st) ? `Change (${st.change_basis?.[category]?.[viewOf(st)] || "n/a"})` : "Change (vs default weights)";
-  el.innerHTML = `<table><caption>${esc(CATEGORIES[category])}. Select a country for the full detail.</caption>
-    <thead><tr><th class="rank-col" scope="col">Rank</th><th scope="col">${changeHead}</th><th scope="col">Country</th><th class="bar-cell" scope="col">Score (0–100)</th></tr></thead><tbody>${
+  const changeHead = isDefault(st) ? `Change: ${st.change_basis?.[category]?.[viewOf(st)] || "not available yet"}` : "Change: vs default weights";
+  el.innerHTML = `<table class="ranking"><caption>${esc(CATEGORIES[category])}. ${esc(changeHead)}. Select a country for the full detail.</caption>
+    <thead><tr><th class="rank-col" scope="col">Rank</th><th scope="col">Change</th><th scope="col">Country</th><th class="bar-cell" scope="col">Score (0–100)</th></tr></thead><tbody>${
     shown.map((r, i) => `<tr class="link ${i < 3 ? "is-top" : ""}" data-href="#/country/${esc(r.iso3)}/${category}">
         <td class="rank-col">${r.rank}</td>
         <td>${(c => c == null ? '<span class="muted">—</span>' : c === 0 ? '<span class="sr-only">no change</span>'
