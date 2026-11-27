@@ -29,8 +29,7 @@ from pipeline.http import Http
 from pipeline.indicators import CATEGORIES, PRESETS
 from pipeline.insights import next_steps, trends_state
 from pipeline.insights import records as _records
-from pipeline.raw import LocalRawStore
-from pipeline.run import run_sources
+from pipeline.run import _raw_store, run_sources
 from pipeline.sources import SOURCES
 
 PAGE = Path(__file__).with_name("preview.html")
@@ -239,6 +238,7 @@ class _Handler(BaseHTTPRequestHandler):
     sessions: Sessions
     throttle: LoginThrottle
     cache: dict  # {"at": monotonic time, "state": dict}; cleared when a run or report finishes
+    trust_proxy: bool  # behind a hosting proxy: use X-Forwarded-For / -Proto
 
     def _state(self) -> dict:
         with self.lock:
@@ -281,8 +281,15 @@ class _Handler(BaseHTTPRequestHandler):
                 return {}
         return {k: v[0] for k, v in parse_qs(raw).items()}
 
+    def _https(self) -> bool:
+        return self.trust_proxy and (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
+
+    def _cookie(self, value: str, max_age: int) -> str:
+        secure = "; Secure" if self._https() else ""  # behind Render's HTTPS proxy, never send it over plain HTTP
+        return f"{COOKIE}={value}; HttpOnly; SameSite=Strict; Path=/; Max-Age={max_age}{secure}"
+
     def _login(self) -> None:
-        address = self.client_address[0]
+        address = client_address(self.client_address[0], self.headers, self.trust_proxy)
         body = self._read_body()  # read before any reply: an unread request body can reset the connection
         if self.throttle.locked(address):
             return self._send(429, b'{"error": "Too many failed attempts. Wait a minute and try again."}')
@@ -296,9 +303,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
-        self.send_header(
-            "Set-Cookie", f"{COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={self.sessions.ttl}"
-        )
+        self.send_header("Set-Cookie", self._cookie(token, self.sessions.ttl))
         self.end_headers()
         self.wfile.write(json.dumps({"user": user}).encode())
 
@@ -306,7 +311,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.sessions.end(self._token())
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Set-Cookie", f"{COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+        self.send_header("Set-Cookie", self._cookie("", 0))
         self.end_headers()
         self.wfile.write(b'{"ok": true}')
 
@@ -314,6 +319,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/login":
             return self._send(200, LOGIN_PAGE.read_bytes(), "text/html; charset=utf-8")
+        if path == "/healthz":  # for the hosting platform's health check; reveals nothing
+            return self._send(200, b'{"ok": true}')
         user = self._user()
         if not user:
             return self._refuse(path)
@@ -425,7 +432,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _run(self, source: str) -> None:
         try:
-            run_sources([SOURCES[source]()], self.store, Http(), trigger="manual", raw_store=LocalRawStore("data"))
+            # Supabase Storage when configured (the hosted site's disk is temporary), else ./data/raw
+            run_sources([SOURCES[source]()], self.store, Http(), trigger="manual", raw_store=_raw_store(os.environ))
         finally:
             with self.lock:
                 self.running.discard(source)
@@ -435,7 +443,21 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
-def make_server(store: Store, port: int, username: str, password_hash: str) -> ThreadingHTTPServer:
+def client_address(peer: str, headers, trust_proxy: bool) -> str:
+    """The visitor's address. Behind a proxy (Render) every request comes from the proxy, so the first
+    X-Forwarded-For entry is used; otherwise that header is ignored, since a visitor could forge it."""
+    forwarded = (headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    return forwarded if trust_proxy and forwarded else peer
+
+
+def listen_address(env) -> tuple[str, int]:
+    """127.0.0.1:8765 locally; hosting platforms set HOST=0.0.0.0 and PORT."""
+    return env.get("HOST", "127.0.0.1"), int(env.get("PORT", 8765))
+
+
+def make_server(
+    store: Store, port: int, username: str, password_hash: str, trust_proxy: bool = False, host: str = "127.0.0.1"
+) -> ThreadingHTTPServer:
     handler = type(
         "Handler",
         (_Handler,),
@@ -447,12 +469,13 @@ def make_server(store: Store, port: int, username: str, password_hash: str) -> T
             "sessions": Sessions(),
             "throttle": LoginThrottle(),
             "cache": {},
+            "trust_proxy": trust_proxy,
         },
     )
-    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+    return ThreadingHTTPServer((host, port), handler)
 
 
-def main(port: int = 8765, env=None) -> int:
+def main(port: int | None = None, env=None) -> int:
     env = os.environ if env is None else env
     username, password_hash = env.get("DASHBOARD_USERNAME"), env.get("DASHBOARD_PASSWORD_HASH")
     if not (username and password_hash):
@@ -467,14 +490,17 @@ def main(port: int = 8765, env=None) -> int:
     store = Store(url)
     if url.startswith("sqlite"):
         store.create_all()
-    server = make_server(store, port, username, password_hash)
+    host, default_port = listen_address(env)
+    trust_proxy = env.get("TRUST_PROXY") == "1"  # set on Render: requests arrive through its HTTPS proxy
+    server = make_server(store, default_port if port is None else port, username, password_hash, trust_proxy, host)
     print(
-        f"WellGTM dashboard on http://localhost:{server.server_address[1]}  (database: {url.split('@')[-1]}; "
-        f"sign in as {username})"
+        f"WellGTM dashboard on http://{'localhost' if host == '127.0.0.1' else host}:{server.server_address[1]}  "
+        f"(database: {url.split('@')[-1]}; sign in as {username})",
+        flush=True,
     )
     server.serve_forever()
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 8765))
+    sys.exit(main(int(sys.argv[1]) if len(sys.argv) > 1 else None))  # else PORT, else 8765

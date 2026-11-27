@@ -1,0 +1,31 @@
+# Render Blueprint for the WellGTM dashboard (docs/deploy_render.md).
+# Render builds and redeploys this automatically on every push to main.
+services:
+  - type: web
+    name: wellgtm
+    runtime: python
+    plan: free
+    region: singapore  # nearest Render region to the Supabase project in Tokyo
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install ".[postgres]"  # psycopg is an optional extra; Supabase needs it
+    startCommand: python -m pipeline.preview
+    healthCheckPath: /healthz
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY  # requests arrive through Render's HTTPS proxy
+        value: "1"
+      # secrets: entered in the Render dashboard, never committed
+      - key: DATABASE_URL
+        sync: false
+      - key: DASHBOARD_USERNAME
+        sync: false
+      - key: DASHBOARD_PASSWORD_HASH
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: KCS_API_KEY
+        sync: false
