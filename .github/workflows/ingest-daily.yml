@@ -1,0 +1,36 @@
+name: Ingest (daily)
+# 02:00 KST every day. Also runnable from the Actions tab or the dashboard's "Run now" (workflow_dispatch).
+on:
+  schedule:
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "One source to run (blank = all daily sources: fx)"
+        required: false
+        default: ""
+
+concurrency:
+  group: ingest-daily
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write  # keepalive: re-enable schedules GitHub disables after 60 days without repo activity
+
+jobs:
+  ingest:
+    uses: ./.github/workflows/_ingest.yml
+    with:
+      sources: ${{ inputs.source || 'fx' }}
+    secrets: inherit
+
+  keepalive:
+    runs-on: ubuntu-latest
+    if: always()
+    needs: ingest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: for w in ingest-daily.yml ingest-weekly.yml ingest-monthly.yml ingest-kcs.yml report-weekly.yml; do gh workflow enable "$w" || true; done

@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WellGTM</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --side: #f1f0ec; --ink: #0b0b0b; --ink-2: #52514e; --muted: #6f6d68;
+    --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.05);
+    --series-1: #2a78d6; --series-1-soft: #9ec5f4; --focus: #2a78d6;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --side: #141413; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #9a988f;
+      --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.06);
+      --series-1: #3987e5; --series-1-soft: #184f95; --focus: #6da7ec;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --side: #141413; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #9a988f;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.06);
+    --series-1: #3987e5; --series-1-soft: #184f95; --focus: #6da7ec;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--series-1); }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+  .skip { position: absolute; left: -999px; top: 8px; background: var(--surface); padding: 8px 12px; z-index: 10; }
+  .skip:focus { left: 8px; }
+
+  /* layout: sidebar + main */
+  .app { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; }
+  aside { background: var(--side); border-right: 1px solid var(--ring); padding: 20px 14px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 20px; }
+  .brand { font-weight: 700; font-size: 17px; padding: 0 10px; }
+  .brand small { display: block; font-weight: 400; font-size: 12px; color: var(--ink-2); }
+  nav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  nav a { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; color: var(--ink); text-decoration: none; font-weight: 550; }
+  nav a:hover { background: var(--wash); }
+  nav a[aria-current="page"] { background: var(--surface); box-shadow: inset 3px 0 0 var(--series-1); }
+  nav svg { width: 18px; height: 18px; flex: none; }
+  .side-foot { margin-top: auto; font-size: 12px; color: var(--ink-2); padding: 0 10px; }
+  main { padding: 28px 32px 64px; max-width: 1200px; width: 100%; }
+  @media (max-width: 820px) {
+    .app { grid-template-columns: 1fr; }
+    aside { position: static; height: auto; flex-direction: row; align-items: center; flex-wrap: wrap; padding: 10px 12px; gap: 8px 16px; border-right: 0; border-bottom: 1px solid var(--ring); }
+    nav ul { grid-auto-flow: column; }
+    .side-foot { margin: 0; }
+    main { padding: 20px 16px 48px; }
+  }
+
+  h1 { font-size: 24px; margin: 0; font-weight: 700; }
+  h2 { font-size: 17px; margin: 0 0 12px; font-weight: 650; }
+  h3 { font-size: 13px; font-weight: 650; color: var(--ink-2); margin: 14px 0 4px; }
+  .lede { color: var(--ink-2); margin: 4px 0 0; max-width: 70ch; }
+  .page-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 8px 24px; margin-bottom: 20px; }
+  .fresh { font-size: 13px; color: var(--ink-2); }
+  .muted { color: var(--muted); }
+  .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 18px; }
+  section + section { margin-top: 20px; }
+
+  /* status (always icon + label) */
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .status i { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-style: normal; font-size: 11px; color: #fff; flex: none; }
+  .s-success i, .s-ok i, .s-robust i { background: var(--good); }
+  .s-warning i, .s-depends i { background: var(--warning); color: #0b0b0b; }
+  .s-fragile i { background: var(--serious); color: #0b0b0b; }
+  .s-skipped i, .s-never i, .s-resolved i { background: var(--axis); color: var(--ink); }
+  .s-failed i, .s-error i { background: var(--critical); }
+  .s-running i { background: var(--series-1); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .s-running i { animation: none; } }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  button { font: inherit; font-size: 14px; font-weight: 600; padding: 7px 13px; border-radius: 8px; border: 1px solid var(--ring); background: var(--surface); color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { background: var(--wash); }
+  button:disabled { color: var(--muted); cursor: default; }
+  button.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+  .tabs button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+  /* overview: TOP3 cards */
+  .top3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+  .top3 article { display: flex; flex-direction: column; gap: 8px; }
+  .t-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .t-rank { font-size: 13px; color: var(--ink-2); }
+  .t-name { font-size: 21px; font-weight: 700; line-height: 1.2; }
+  .t-why { margin: 0; }
+  .t-conf { font-size: 13px; color: var(--ink-2); margin: 0; }
+  details { border-top: 1px solid var(--grid); padding-top: 8px; margin-top: auto; }
+  summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--series-1); }
+  details ul { margin: 0; padding-left: 18px; }
+  details li { margin: 4px 0; font-size: 14px; }
+  .fact { font-size: 13px; color: var(--ink-2); }
+  .src { font-size: 12px; color: var(--muted); }
+  .caveat { font-size: 13px; color: var(--ink-2); border-left: 3px solid var(--warning); padding-left: 8px; margin: 6px 0; }
+
+  /* tables */
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  caption { text-align: left; color: var(--ink-2); font-size: 13px; padding-bottom: 8px; }
+  th { text-align: left; color: var(--ink-2); font-weight: 600; font-size: 13px; padding: 6px 10px 8px 0; border-bottom: 1px solid var(--axis); white-space: nowrap; }
+  td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:hover td { background: var(--wash); }
+  tr.is-top td:nth-child(2) { font-weight: 700; }
+  .bar-cell { width: 30%; min-width: 150px; }
+  .bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .bar { position: relative; height: 12px; flex: 1; }
+  .bar span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--series-1); border-radius: 0 4px 4px 0; }
+  .bar.soft span { background: var(--series-1-soft); }
+  .bar-wrap b { font-weight: 600; min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+  .pill { font-size: 12px; color: var(--ink-2); border: 1px solid var(--ring); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+  .note { color: var(--ink-2); font-size: 13px; margin: 12px 0 0; }
+
+  /* management */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .kpi .label { color: var(--ink-2); font-size: 13px; }
+  .kpi .value { font-size: 26px; font-weight: 700; margin-top: 4px; line-height: 1.2; }
+  .kpi .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .src-card { padding: 14px; }
+  .src-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .src-name { font-weight: 650; }
+  .src-desc { font-size: 13px; color: var(--ink-2); margin: 2px 0 8px; }
+  .src-card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0 0 12px; font-size: 13px; }
+  .src-card dt { color: var(--muted); } .src-card dd { margin: 0; }
+  .msg { font-size: 13px; color: var(--ink-2); margin: 4px 0 10px; overflow-wrap: anywhere; }
+  .two { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; }
+  @media (max-width: 1000px) { .two { grid-template-columns: 1fr; } }
+  .feed { list-style: none; margin: 0; padding: 0; max-height: 620px; overflow: auto; }
+  .feed li { padding: 12px 0; border-top: 1px solid var(--grid); }
+  .feed li:first-child { border-top: 0; padding-top: 0; }
+  .run-top { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+  .steps { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .step { font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--ring); color: var(--ink-2); }
+  .step.error { border-color: var(--critical); color: var(--ink); }
+  .step.warning { border-color: var(--warning); }
+  .step.skipped { border-style: dashed; }
+  .counts { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink-2); }
+  .tag { font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--wash); color: var(--ink-2); }
+  .empty { color: var(--muted); padding: 8px 0; }
+  #tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--ring); border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.14); max-width: 300px; z-index: 5; }
+  #tip dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 6px 0 0; }
+  #tip dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  [hidden] { display: none !important; }
+  .more { font-weight: 600; font-size: 14px; text-decoration: none; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--grid); }
+  .more:hover { text-decoration: underline; }
+  tbody tr.link { cursor: pointer; }
+  td a.row-link { color: var(--ink); text-decoration: none; font-weight: 600; }
+  td a.row-link:hover { text-decoration: underline; }
+  .crumb { font-size: 14px; text-decoration: none; display: inline-block; margin-bottom: 8px; }
+  .c-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; color: var(--ink-2); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+  .pillar { padding: 10px 0; border-top: 1px solid var(--grid); }
+  .pillar:first-of-type { border-top: 0; padding-top: 0; }
+  .pillar-head { display: grid; grid-template-columns: minmax(150px, 1fr) 2fr auto; gap: 10px; align-items: center; }
+  .stat { font-size: 30px; font-weight: 700; line-height: 1.1; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); margin: 4px 0 8px; }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; background: var(--c); }
+  .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink-2); }
+  .chart .gridline { stroke: var(--grid); stroke-width: 1; }
+  .chart .axis { stroke: var(--axis); stroke-width: 1; }
+  .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart .cross { stroke: var(--axis); stroke-width: 1; }
+  .linkbtn { background: none; border: 0; padding: 0; color: var(--series-1); font-weight: 600; font-size: 13px; }
+  /* 10 series colours in rank order; validated as adjacent pairs in both modes (dataviz validate_palette.js) */
+  .viz { --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948; --s9: #00a3c4; --s10: #b05a1e; }
+  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .viz { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --s9: #1597b3; --s10: #c46a2a; } }
+  :root[data-theme="dark"] .viz { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767; --s9: #1597b3; --s10: #c46a2a; }
+  .alerts { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+  .alerts li { font-size: 14px; display: flex; gap: 8px; align-items: flex-start; }
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .spark svg { width: 100%; height: 56px; display: block; }
+  .spark .line { stroke: var(--s1); }
+  .up::before { content: "▲ "; font-size: 10px; } .down::before { content: "▼ "; font-size: 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  .chips button { font-size: 13px; padding: 4px 10px; display: inline-flex; align-items: center; gap: 6px; }
+  .chips button::before { content: ""; width: 12px; height: 3px; border-radius: 2px; background: var(--c); }
+  .chips button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+  .chart .band { opacity: .18; }
+  .chart .divider { stroke: var(--axis); stroke-dasharray: 3 3; }
+  .chart .dim { opacity: .22; }
+  .chart .hl { stroke-width: 3.5; }
+  .pred { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .pred .big { font-size: 30px; font-weight: 700; line-height: 1.1; }
+  .move-up { color: var(--ink); } .move-down { color: var(--ink); }
+  .viz { --c1: #2a78d6; --c2: #eb6834; --c3: #1baf7a; --c4: #eda100; }
+  @media (prefers-color-scheme: dark) { :root:where(:not([data-theme="light"])) .viz { --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; } }
+  :root[data-theme="dark"] .viz { --c1: #3987e5; --c2: #d95926; --c3: #199e70; --c4: #c98500; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="app">
+  <aside>
+    <div class="brand">WellGTM<small>K-food export intelligence</small></div>
+    <nav aria-label="Pages">
+      <ul>
+        <li><a href="#/overview" data-page="overview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          Overview</a></li>
+        <li><a href="#/trends" data-page="trends">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
+          Trends</a></li>
+        <li><a href="#/reports" data-page="reports">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>
+          Weekly reports</a></li>
+        <li><a href="#/management" data-page="management">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6"/><circle cx="18" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>
+          Management</a></li>
+      </ul>
+    </nav>
+    <div class="side-foot" id="side-foot" aria-live="polite"></div>
+  </aside>
+
+  <main id="main" tabindex="-1">
+    <!-- OVERVIEW -->
+    <div data-view="overview">
+      <div class="page-head">
+        <div>
+          <h1>Overview</h1>
+          <p class="lede">The three most promising export markets for Lotte Wellfood's confectionery, bakery and ice cream, ranked from public trade and economic data that updates automatically.</p>
+        </div>
+        <div class="fresh" id="ov-fresh"></div>
+      </div>
+      <div class="tabs" id="tabs" role="group" aria-label="Product category"></div>
+
+      <section aria-labelledby="top3-h">
+        <h2 id="top3-h">TOP3 for <span id="top3-month"></span></h2>
+        <p class="fact" id="top3-basis" style="margin:-6px 0 12px"></p>
+        <div class="top3" id="top3"></div>
+      </section>
+
+      <section aria-labelledby="pred-h">
+        <div class="page-head" style="margin:0 0 12px"><h2 id="pred-h" style="margin:0">Predicted TOP3 <span class="fact" style="font-weight:400">(the markets most likely to be in the top three)</span></h2>
+          <div class="tabs" id="pred-years" role="group" aria-label="Forecast year" style="margin:0"></div></div>
+        <div class="pred" id="pred"></div>
+        <p class="note" id="pred-note"></p>
+      </section>
+
+      <section class="card viz" id="trend-section" aria-labelledby="trend-h">
+        <div class="page-head" style="margin:0"><h2 id="trend-h" style="margin:0">Top 10 markets: past, present and forecast</h2>
+          <button class="linkbtn" data-toggle-trend>Show as table</button></div>
+        <p class="fact" style="margin:4px 0 0">Score each year using only the data known then (solid), and the forecast to <span id="trend-end"></span> (dashed). All products. Select a country to highlight it and see its 80% forecast range.</p>
+        <div class="chips" id="trend-chips" role="group" aria-label="Highlight a country"></div>
+        <div class="chart" id="trend-chart"></div>
+      </section>
+
+      <section class="card" aria-labelledby="all-h">
+        <h2 id="all-h">All scored countries</h2>
+        <div class="scroll" id="ranking"></div>
+        <p class="note">Score 0–100 combines four pillars: market growth 30%, market size 25%, Korean export momentum 30%, ease of entry 15%. Growth uses volume, not value, and re-export hubs are excluded.</p>
+      </section>
+    </div>
+
+    <!-- TRENDS -->
+    <div data-view="trends" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Trends</h1>
+          <p class="lede">What is moving now: Korea's monthly K-food exports, where they are growing fastest, ingredient prices, and how the top markets' scores have changed.</p>
+        </div>
+      </div>
+      <div class="kpi-row" id="tr-kpis"></div>
+      <section class="card viz" aria-labelledby="tr-exp-h">
+        <div class="page-head" style="margin:0"><h2 id="tr-exp-h" style="margin:0">Korea's K-food exports to the world, by month</h2>
+          <button class="linkbtn" data-toggle-kfood>Show as table</button></div>
+        <p class="fact" style="margin:4px 0 0">관세청 monthly statistics (FOB, US$), four product categories.</p>
+        <div class="chart" id="tr-exp"></div>
+      </section>
+      <div id="trend-slot"></div>
+      <section class="card" aria-labelledby="tr-dest-h">
+        <h2 id="tr-dest-h">Destinations: last 12 months vs the 12 before</h2>
+        <div class="scroll" id="tr-dest"></div>
+      </section>
+      <section aria-labelledby="tr-com-h">
+        <h2 id="tr-com-h">Ingredient prices</h2>
+        <div class="kpi-row viz" id="tr-com"></div>
+        <p class="note">World Bank Pink Sheet monthly prices. Higher cocoa and sugar prices raise chocolate and confectionery import values without any change in demand, which is why the ranking uses volume.</p>
+      </section>
+    </div>
+
+    <!-- REPORTS -->
+    <div data-view="reports" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Weekly reports</h1>
+          <p class="lede">An automatic summary every Tuesday after the weekly data refresh: TOP3 and rank changes, alerts for the top 10 markets (moves of 2+ places, entering or leaving the TOP3, monthly export swings of ±30%, tariff revisions), exports, the forecast, ingredient prices and pipeline health. Every number comes from the stored data.</p>
+        </div>
+        <button class="primary" data-make-report>Generate this week's report</button>
+      </div>
+      <div class="two" style="grid-template-columns:minmax(220px,.5fr) minmax(0,1.5fr)">
+        <section class="card" aria-labelledby="rep-list-h"><h2 id="rep-list-h">Reports</h2><ul class="feed" id="rep-list"></ul></section>
+        <section class="card" aria-live="polite" id="rep-view"></section>
+      </div>
+    </div>
+
+    <!-- COUNTRY -->
+    <div data-view="country" hidden>
+      <a class="crumb" href="#/overview">← Overview</a>
+      <div id="country"></div>
+    </div>
+
+    <!-- MANAGEMENT -->
+    <div data-view="management" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Management</h1>
+          <p class="lede">The data pipeline behind the ranking: what ran, what changed, and whether every source is healthy. Rankings update automatically when trade or economic data changes.</p>
+        </div>
+        <div class="fresh" id="mg-fresh"></div>
+      </div>
+
+      <section class="kpis" id="kpis" aria-label="Summary"></section>
+
+      <section class="card" aria-labelledby="src-h">
+        <div class="page-head" style="margin:0 0 12px"><h2 id="src-h" style="margin:0">Sources</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="linkbtn" href="/api/bi.zip" download style="align-self:center">Download BI data (CSV)</a>
+          <button class="primary" id="run-all" data-run-all>Run all sources</button></div></div>
+        <div class="sources" id="sources"></div>
+      </section>
+
+      <section class="two">
+        <div class="card" aria-labelledby="feed-h">
+          <h2 id="feed-h">Live run feed</h2>
+          <ul class="feed" id="feed" aria-live="polite"></ul>
+        </div>
+        <div class="card" aria-labelledby="rev-h">
+          <h2 id="rev-h">What changed</h2>
+          <div class="scroll" id="revisions"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+<div id="tip" role="tooltip" hidden></div>
+
+<script>
+const CATEGORIES = { all: "All products", "1704": "Sugar confectionery", "1806": "Chocolate", "1905": "Bakery & biscuits", "2105": "Ice cream" };
+const PILLARS = { "Market growth": "Market growth", "Market size": "Market size", "K-momentum (trade)": "Korean export momentum", "Entry ease": "Ease of entry" };
+const SOURCE_INFO = {
+  comtrade: "UN Comtrade: annual imports and Korea's exports",
+  wdi: "World Bank: GDP, population, logistics",
+  tariffs: "WITS tariffs + policy overrides",
+  fx: "Daily exchange rates",
+  pinksheet: "World Bank commodity prices (cocoa, sugar…)",
+  kcs_monthly: "관세청: monthly exports by product × country",
+  kcs_items: "관세청: monthly exports by HS10 product",
+  kcs_nations: "관세청: total exports per country",
+};
+const STATUS = { success: ["success", "✓", "Healthy"], failed: ["failed", "✕", "Failed"], skipped: ["skipped", "–", "Skipped"],
+                 running: ["running", "●", "Running"], "never run": ["never", "–", "Not run yet"], resolved: ["resolved", "✓", "Resolved by a later run"] };
+const CONF = { robust: ["robust", "✓", "Robust pick"], "depends on priorities": ["depends", "!", "Depends on priorities"], fragile: ["fragile", "!", "Fragile pick"] };
+let category = "all", last = null;
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ago = iso => {
+  if (!iso) return "never";
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 0) { const m = -s / 60; return m < 60 ? `in ${Math.round(m)} min` : m < 2880 ? `in ${Math.round(m / 60)} h` : `in ${Math.round(m / 1440)} days`; }
+  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 172800 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} days ago`;
+};
+const badge = ([cls, icon, label]) => `<span class="status s-${cls}"><i aria-hidden="true">${icon}</i>${esc(label)}</span>`;
+const runBadge = st => badge(STATUS[st] || [st, "•", st]);
+const fmt = n => n == null ? "—" : Number(n).toLocaleString();
+const dur = r => r.finished_at ? `${((Date.parse(r.finished_at) - Date.parse(r.started_at)) / 1000).toFixed(1)} s` : "running";
+const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+
+function fmtFact(f) {
+  const v = f.value, u = f.unit;
+  const t = u === "%/yr" ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}% a year` : u === "%" ? `${v.toFixed(1)}%` :
+            u === "US$ M" ? `US$${v.toLocaleString(undefined, { maximumFractionDigits: 1 })}M` : u === "US$" ? `US$${Math.round(v).toLocaleString()}` :
+            u === "million" ? `${Math.round(v).toLocaleString()} million` : v.toFixed(2);
+  return `${esc(f.label)}: <b>${esc(t)}</b> <span class="src">${esc([f.period, f.source].filter(Boolean).join(" · "))}</span>`;
+}
+const pillarItem = e => `<li><b>${esc(cap(e.name))}</b> <span class="muted">#${e.rank} of ${e.of}</span>${
+  e.facts.length ? `<div class="fact">${e.facts.map(fmtFact).join("<br>")}</div>` : ""}</li>`;
+
+/* ---------- routing ---------- */
+function route() {
+  const [, page = "overview", iso, cat] = location.hash.match(/^#\/(\w+)(?:\/(\w+))?(?:\/(\w+))?/) || [];
+  document.querySelectorAll("[data-view]").forEach(v => { v.hidden = v.dataset.view !== page; });
+  const nav = page === "country" ? "overview" : page;
+  document.querySelectorAll("nav a").forEach(a => {
+    if (a.dataset.page === nav) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  });
+  const trendSec = document.getElementById("trend-section");
+  if (page === "trends") { document.getElementById("trend-slot").appendChild(trendSec); loadTrends(); }
+  else document.getElementById("pred-h").closest("section").after(trendSec);
+  if (page === "reports") loadReports(iso);
+  if (page === "country" && iso) { loadCountry(iso.toUpperCase(), CATEGORIES[cat] ? cat : "all"); return; }
+  document.title = `${{ management: "Management", trends: "Trends", reports: "Weekly reports" }[page] || "Overview"} · WellGTM`;
+}
+
+/* ---------- overview ---------- */
+function renderTabs() {
+  document.getElementById("tabs").innerHTML = Object.entries(CATEGORIES).map(([k, v]) =>
+    `<button data-cat="${k}" aria-pressed="${k === category}">${esc(v)}</button>`).join("");
+}
+
+function renderTop3(st) {
+  document.getElementById("top3-month").textContent = new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  const kcs = st.sources.find(s => s.source === "kcs_monthly");
+  document.getElementById("top3-basis").textContent = `Ranked from annual trade data (latest year ${Math.max(...(st.ranking.all || []).map(r => r.latest_year || 0)) || "—"}) and economic indicators, refreshed automatically${kcs?.last_success ? `; monthly 관세청 exports last updated ${ago(kcs.last_success)}` : ""}.`;
+  const top = (st.ranking[category] || []).slice(0, 3);
+  const el = document.getElementById("top3");
+  if (!top.length) { el.innerHTML = `<div class="card empty">No ranking yet. It appears automatically once trade and economic data have loaded (see Management).</div>`; return; }
+  el.innerHTML = top.map(r => {
+    const w = r.reasons;
+    return `<article class="card" aria-labelledby="t-${esc(r.iso3)}">
+      <div class="t-head"><div><div class="t-rank">#${w.rank} · score ${r.score.toFixed(1)}</div>
+        <div class="t-name" id="t-${esc(r.iso3)}">${esc(w.name)}</div></div>${badge(CONF[w.confidence.level])}</div>
+      <p class="t-why">${esc(w.headline)}</p>
+      <p class="t-conf">In the TOP3 in ${Math.round(w.confidence.p_top3 * 100)}% of weightings${w.caveats.length ? ` · ${w.caveats.length} caveat${w.caveats.length > 1 ? "s" : ""}` : ""}</p>
+      <a class="more" href="#/country/${esc(r.iso3)}/${category}">Why, in detail →</a>
+    </article>`;
+  }).join("");
+}
+
+function renderRanking(st) {
+  const rows = st.ranking[category] || [];
+  const el = document.getElementById("ranking");
+  if (!rows.length) { el.innerHTML = `<div class="empty">No countries scored yet.</div>`; return; }
+  const max = Math.max(...rows.map(r => r.score));
+  el.innerHTML = `<table><caption>${esc(CATEGORIES[category])}: ${rows.length} countries. Select a country for the full detail.</caption>
+    <thead><tr><th class="num" scope="col">Rank</th><th scope="col">Country</th><th class="bar-cell" scope="col">Score (0–100)</th></tr></thead><tbody>${
+    rows.map((r, i) => `<tr class="link ${i < 3 ? "is-top" : ""}" data-href="#/country/${esc(r.iso3)}/${category}">
+        <td class="num">${r.rank}</td>
+        <td><a class="row-link" href="#/country/${esc(r.iso3)}/${category}">${esc(r.reasons?.name || r.iso3)}</a></td>
+        <td><div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(r.score / max * 100).toFixed(1)}%"></span></div><b>${r.score.toFixed(1)}</b></div></td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+/* ---------- country ---------- */
+const CAT_COLOR = { "1704": "var(--c1)", "1806": "var(--c2)", "1905": "var(--c3)", "2105": "var(--c4)" };
+let countryIso = null, countryCat = "all", countryData = null, showTable = false;
+const ym = p => `${p.slice(0, 4)}-${p.slice(4)}`;
+const money = v => v >= 1e9 ? `US$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `US$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `US$${(v / 1e3).toFixed(0)}K` : `US$${Math.round(v)}`;
+
+async function loadCountry(iso, cat) {
+  countryIso = iso; countryCat = cat;
+  const el = document.getElementById("country");
+  const res = await fetch(`/api/country/${encodeURIComponent(iso)}`);
+  if (!res.ok) { el.innerHTML = `<h1>Unknown country</h1><p class="lede">There is no candidate market with code ${esc(iso)}.</p>`; document.title = "Unknown country · WellGTM"; return; }
+  countryData = await res.json();
+  renderCountry();
+}
+
+function renderCountry() {
+  const c = countryData, el = document.getElementById("country");
+  document.title = `${c.name} · WellGTM`;
+  const r = c.ranking[countryCat] || c.ranking.all;
+  if (!r) { el.innerHTML = `<h1>${esc(c.name)}</h1><p class="lede">${esc(c.name)} is not in the current ranking (it may be a re-export hub, a sanctioned market or lack data).</p>`; return; }
+  const w = r.reasons;
+  el.innerHTML = `
+    <h1>${esc(c.name)}</h1>
+    <div class="c-meta"><span>#${r.rank} of ${r.of} · score ${r.score.toFixed(1)} · ${esc(CATEGORIES[countryCat])}</span>${badge(CONF[w.confidence.level])}</div>
+    <div class="tabs" role="group" aria-label="Product category" style="margin-top:16px">${Object.entries(CATEGORIES).map(([k, v]) =>
+      `<button data-ccat="${k}" aria-pressed="${k === countryCat}" ${c.ranking[k] ? "" : "disabled"}>${esc(v)}</button>`).join("")}</div>
+
+    <section class="card" aria-labelledby="c-why"><h2 id="c-why">Why</h2>
+      <p style="margin:0 0 8px">${esc(w.summary)}</p>
+      <h3>How sure</h3><p class="fact" style="margin:0">${esc(cap(w.confidence.text))}</p>
+      ${w.caveats.length ? `<h3>Notes and caveats</h3>${w.caveats.map(x => `<div class="caveat">${esc(x)}</div>`).join("")}` : `<h3>Notes and caveats</h3><p class="fact" style="margin:0">None: every indicator was available.</p>`}
+    </section>
+
+    <section class="card" aria-labelledby="c-pillars"><h2 id="c-pillars">Pillar scores</h2>
+      ${w.pillars.map(p => `<div class="pillar">
+        <div class="pillar-head"><b>${esc(cap(p.name))}</b>
+          <div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(p.value * 100).toFixed(1)}%"></span></div><b>${Math.round(p.value * 100)}</b></div>
+          <span class="muted">#${p.rank} of ${p.of}</span></div>
+        ${p.facts.length ? `<div class="fact" style="margin-top:4px">${p.facts.map(fmtFact).join("<br>")}</div>` : `<div class="fact">No indicator data; the median of all countries was used.</div>`}
+      </div>`).join("")}
+    </section>
+
+    <section class="card" aria-labelledby="c-exports">
+      <div class="page-head" style="margin:0"><h2 id="c-exports" style="margin:0">Korean exports here, by month</h2>
+        <button class="linkbtn" data-toggle-table>${showTable ? "Show chart" : "Show as table"}</button></div>
+      <p class="fact" style="margin:4px 0 0">관세청 monthly export statistics (FOB, US$), last ${new Set(c.monthly.map(m => m.period)).size} months.</p>
+      <div id="c-chart" class="viz"></div>
+    </section>
+
+    <div class="grid2">
+      <section class="card" aria-labelledby="c-share"><h2 id="c-share">Food's share of Korea's exports here</h2>${
+        c.food_share ? `<div class="stat">${(c.food_share.share * 100).toFixed(2)}%</div>
+          <p class="fact">${money(c.food_share.food_usd)} of ${money(c.food_share.total_usd)} in ${ym(c.food_share.period)} (four product categories vs all goods; 관세청).</p>`
+        : `<p class="empty">No 관세청 data loaded for this market yet.</p>`}</section>
+      <section class="card" aria-labelledby="c-rank"><h2 id="c-rank">Rank by product category</h2>
+        <table><thead><tr><th scope="col">Category</th><th class="num" scope="col">Rank</th><th class="num" scope="col">Score</th><th scope="col">Confidence</th></tr></thead><tbody>${
+          Object.entries(CATEGORIES).map(([k, v]) => { const x = c.ranking[k];
+            return `<tr><td>${esc(v)}</td><td class="num">${x ? `#${x.rank} of ${x.of}` : "—"}</td><td class="num">${x ? x.score.toFixed(1) : "—"}</td><td>${x ? badge(CONF[x.reasons.confidence.level]) : ""}</td></tr>`; }).join("")
+        }</tbody></table></section>
+    </div>
+
+    <section class="card" aria-labelledby="c-tariffs"><h2 id="c-tariffs">Tariffs on Korean products</h2>
+      <div class="scroll"><table><caption>Applied rate = the lower of MFN and the FTA rate, plus any additional duties in force.</caption>
+        <thead><tr><th scope="col">Category</th><th class="num" scope="col">MFN average</th><th scope="col">FTA rate</th><th scope="col">Additional duties</th><th class="num" scope="col">Applied</th></tr></thead><tbody>${
+        c.tariffs.map(t => `<tr><td>${esc(CATEGORIES[t.hs])} <span class="muted">${t.hs}</span></td>
+          <td class="num">${t.mfn_pct == null ? "—" : `${t.mfn_pct}%`} <span class="src">${t.mfn_lines ? `${t.mfn_lines} lines` : ""}</span></td>
+          <td>${t.preferential_pct != null ? `${t.preferential_pct}% (${esc(t.agreement)})` : t.fta_rate_missing ? `<span class="status s-warning"><i aria-hidden="true">!</i>${esc(t.fta_with_korea)}: rate not entered</span>` : "No FTA"}</td>
+          <td>${t.additional_pct ? `${t.additional_pct}% (${esc(t.additional)})` : "None"}</td>
+          <td class="num"><b>${t.applied_pct == null ? "—" : `${t.applied_pct}%`}</b></td></tr>`).join("")
+      }</tbody></table></div>
+      ${c.tariffs.some(t => t.fta_rate_missing) ? `<div class="caveat">Korea has an FTA with ${esc(c.name)} (${esc(c.tariffs[0].fta_with_korea)}), but its preferential rates are not in the tariff file yet, so “Applied” shows MFN and probably overstates the real tariff.</div>` : ""}
+      <p class="note">MFN: WITS/TRAINS simple averages per HS6 line, latest year. FTA rates and additional duties: the reviewed override file (pipeline/tariff_overrides.yaml).</p>
+    </section>`;
+  renderExportsChart();
+}
+
+function renderExportsChart() {
+  monthlyChart(document.getElementById("c-chart"), countryData.monthly, showTable,
+               `Korean monthly exports to ${countryData.name} by product category`);
+}
+
+/* Monthly line chart, one line per product category: legend, end labels, crosshair tooltip, table view. */
+function monthlyChart(el, data, asTable, label) {
+  if (!data.length) { el.innerHTML = `<p class="empty">No 관세청 monthly data yet.</p>`; return; }
+  const periods = [...new Set(data.map(d => d.period))].sort();
+  const cats = Object.keys(CAT_COLOR).filter(k => data.some(d => d.category === k));
+  const val = (k, p) => (data.find(d => d.category === k && d.period === p) || {}).value_usd || 0;
+  if (asTable) {
+    el.innerHTML = `<div class="scroll"><table><thead><tr><th scope="col">Month</th>${cats.map(k => `<th class="num" scope="col">${esc(CATEGORIES[k])}</th>`).join("")}</tr></thead><tbody>${
+      periods.slice().reverse().map(p => `<tr><td>${ym(p)}</td>${cats.map(k => `<td class="num">${money(val(k, p))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    return;
+  }
+  const W = 760, H = 280, L = 64, R = 140, T = 12, B = 28, w = W - L - R, h = H - T - B;
+  const max = Math.max(...cats.flatMap(k => periods.map(p => val(k, p)))) || 1;
+  const step = 10 ** Math.floor(Math.log10(max)), top = Math.ceil(max / step) * step;
+  const x = i => L + (periods.length < 2 ? w / 2 : i / (periods.length - 1) * w), y = v => T + h - v / top * h;
+  const ticks = [0, .25, .5, .75, 1].map(f => f * top);
+  const yearTicks = periods.map((p, i) => [p, i]).filter(([p]) => p.endsWith("01"));
+  const ends = cats.map(k => ({ k, y: y(val(k, periods.at(-1))) })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
+  el.innerHTML = `<div class="legend" aria-hidden="true">${cats.map(k => `<span style="--c:${CAT_COLOR[k]}">${esc(CATEGORIES[k])}</span>`).join("")}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}, ${ym(periods[0])} to ${ym(periods.at(-1))}. Use “Show as table” for the values.">
+      ${ticks.map(t => `<line class="gridline" x1="${L}" x2="${L + w}" y1="${y(t)}" y2="${y(t)}"/><text x="${L - 8}" y="${y(t) + 4}" text-anchor="end">${money(t)}</text>`).join("")}
+      <line class="axis" x1="${L}" x2="${L + w}" y1="${T + h}" y2="${T + h}"/>
+      ${yearTicks.map(([p, i]) => `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${p.slice(0, 4)}</text>`).join("")}
+      ${cats.map(k => `<path class="line" style="stroke:${CAT_COLOR[k]}" d="${periods.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(val(k, p)).toFixed(1)}`).join("")}"/>`).join("")}
+      ${ends.map(e => `<text x="${L + w + 8}" y="${e.y + 4}">${esc(CATEGORIES[e.k])}</text>`).join("")}
+      <line class="cross" y1="${T}" y2="${T + h}" visibility="hidden"/>
+      <rect class="hit" x="${L}" y="${T}" width="${w}" height="${h}" fill="transparent"/>
+    </svg>`;
+  const svg = el.querySelector("svg"), cross = el.querySelector(".cross"), tip = document.getElementById("tip");
+  el.querySelector(".hit").addEventListener("mousemove", ev => {
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const i = Math.max(0, Math.min(periods.length - 1, Math.round((loc.x - L) / w * (periods.length - 1))));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    tip.innerHTML = `<b>${ym(periods[i])}</b><dl>${cats.map(k => `<dt>${esc(CATEGORIES[k])}</dt><dd>${money(val(k, periods[i]))}</dd>`).join("")}</dl>`;
+    tip.hidden = false; tip.style.left = Math.min(ev.clientX + 14, innerWidth - 310) + "px"; tip.style.top = (ev.clientY + 14) + "px";
+  });
+  el.querySelector(".hit").addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+}
+
+/* ---------- weekly reports ---------- */
+async function loadReports(week) {
+  const list = await (await fetch("/api/reports")).json();
+  const el = document.getElementById("rep-list");
+  el.innerHTML = list.length ? list.map(r => `<li><a class="row-link" href="#/reports/${esc(r.week)}" ${r.week === (week || list[0].week) ? 'aria-current="true"' : ""}>${esc(r.title)}</a>
+    <div class="fact">${esc(r.headline)}</div></li>`).join("") : `<li class="empty">No reports yet. The first one is generated on Tuesday, or press “Generate this week's report”.</li>`;
+  const pick = week || list[0]?.week;
+  const view = document.getElementById("rep-view");
+  if (!pick) { view.innerHTML = ""; return; }
+  const r = await (await fetch(`/api/reports/${encodeURIComponent(pick)}`)).json();
+  const usd = v => money(v);
+  view.innerHTML = `<div class="page-head" style="margin:0 0 8px"><h2 style="margin:0">${esc(r.title)}</h2>
+      <a class="linkbtn" href="/api/reports/${esc(r.week)}.md" download>Download Markdown</a></div>
+    <p style="margin:0 0 4px"><b>${esc(r.headline)}</b></p>
+    <p class="fact" style="margin:0">Generated ${esc(new Date(r.generated_at).toLocaleString())}</p>
+    <h3>TOP3</h3><ol style="margin:0;padding-left:20px">${r.top3.map(c => `<li><a class="row-link" href="#/country/${esc(c.iso3)}/all">${esc(c.name)}</a> · score ${c.score.toFixed(1)} · ${badge(CONF[c.confidence])}<div class="fact">${esc(c.headline)}</div></li>`).join("")}</ol>
+    <h3>Rank changes since last week</h3>${r.movers.length ? `<table><thead><tr><th scope="col">Country</th><th class="num" scope="col">Last week</th><th class="num" scope="col">Now</th><th class="num" scope="col">Change</th></tr></thead><tbody>${
+      r.movers.map(m => `<tr><td>${esc(m.name)}</td><td class="num">#${m.was}</td><td class="num">#${m.now}</td><td class="num ${m.change > 0 ? "up" : "down"}">${m.change > 0 ? "+" : ""}${m.change}</td></tr>`).join("")}</tbody></table>`
+      : `<p class="fact">${r.first_report ? "First report: nothing to compare yet." : "No rank changes."}</p>`}
+    <h3>Exports (관세청)</h3>${r.exports ? `<p class="fact" style="margin:0 0 6px">Korea's K-food exports in ${ym(r.exports.period)}: <b>${usd(r.exports.value_usd)}</b> (${pct(r.exports.yoy)} on a year earlier).</p>
+      <table><thead><tr><th scope="col">Category</th><th class="num" scope="col">${ym(r.exports.period)}</th><th class="num" scope="col">vs a year earlier</th></tr></thead><tbody>${
+      Object.values(r.exports.by_category).map(c => `<tr><td>${esc(c.name)}</td><td class="num">${usd(c.value_usd)}</td><td class="num ${dir(c.yoy)}">${pct(c.yoy)}</td></tr>`).join("")}</tbody></table>
+      ${r.exports.fastest_destinations.length ? `<p class="fact">Fastest-growing destinations (12 months, ≥ US$5M): ${r.exports.fastest_destinations.map(d => `${esc(d.name)} ${pct(d.growth)}`).join(", ")}</p>` : ""}` : `<p class="empty">No 관세청 data.</p>`}
+    <h3>Forecast</h3>${r.forecast ? `<p class="fact" style="margin:0">Most likely TOP3 in ${r.forecast.year}: ${r.forecast.top3.map(c => `${esc(c.name)} (${Math.round(c.p_top3 * 100)}%)`).join(", ")}.</p>` : `<p class="empty">No forecast yet.</p>`}
+    <h3>Alerts (top 10 markets)</h3>${(r.alerts || []).length ? `<ul class="alerts">${r.alerts.map(a => `<li>${badge(["warning", "!", ""])}<span><a class="row-link" href="#/country/${esc(a.iso3)}/all">${esc(a.name)}</a>: ${esc(a.text)}</span></li>`).join("")}</ul>` : `<p class="fact" style="margin:0">No alerts this week.</p>`}
+    <h3>Ingredient prices</h3><p class="fact" style="margin:0">${r.prices.map(p => `${esc(COMMODITY[p.commodity] || p.commodity)} ${p.latest.toFixed(2)} ${esc(p.unit)} (${pct(p.yoy)})`).join(" · ") || "No data."}</p>
+    <h3>Data and pipeline</h3><p class="fact" style="margin:0">${r.health.runs} runs this week, ${r.health.failed} failed · ${r.health.rows_new.toLocaleString()} new rows · ${r.health.rows_revised.toLocaleString()} revised values${
+      r.health.skipped.length ? ` · skipped: ${esc(r.health.skipped.join(", "))}` : ""}</p>
+    ${r.health.fta_rates_missing.length ? `<div class="caveat">FTA preferential rates not yet entered for ${esc(r.health.fta_rates_missing.join(", "))}; applied tariffs show MFN.</div>` : ""}`;
+}
+
+/* ---------- trends page ---------- */
+let trendsData = null, kfoodTable = false;
+const COMMODITY = { cocoa: "Cocoa", sugar_world: "Sugar (world)", wheat_us_hrw: "Wheat (US HRW)", palm_oil: "Palm oil" };
+const pct = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
+const dir = v => v == null ? "" : v >= 0 ? "up" : "down";
+
+async function loadTrends() {
+  trendsData = await (await fetch("/api/trends")).json();
+  renderTrendsPage();
+}
+
+function renderTrendsPage() {
+  const t = trendsData;
+  if (!t) return;
+  const lt = t.kfood_latest, topDest = t.destinations[0];
+  const fastest = t.destinations.filter(d => d.growth != null && d.last12_usd >= 5e6).sort((a, b) => b.growth - a.growth)[0];
+  const cocoa = t.commodities.find(c => c.commodity === "cocoa");
+  document.getElementById("tr-kpis").innerHTML = [
+    ["K-food exports, latest month", lt ? money(lt.value_usd) : "—", lt ? `${ym(lt.period)} · ${pct(lt.yoy)} vs a year earlier` : "no 관세청 data yet"],
+    ["Largest destination (12 months)", topDest ? topDest.name : "—", topDest ? `${money(topDest.last12_usd)} · ${pct(topDest.growth)}` : ""],
+    ["Fastest growing (≥ US$5M a year)", fastest ? fastest.name : "—", fastest ? `${pct(fastest.growth)} over 12 months` : ""],
+    ["Cocoa price", cocoa ? `US$${cocoa.latest.toFixed(2)}/kg` : "—", cocoa ? `${cocoa.latest_month} · ${pct(cocoa.yoy)} vs a year earlier` : ""],
+  ].map(([l, v, n]) => `<div class="card kpi"><div class="label">${l}</div><div class="value">${esc(v)}</div><div class="sub">${esc(n)}</div></div>`).join("");
+  monthlyChart(document.getElementById("tr-exp"), t.kfood_monthly, kfoodTable, "Korea's monthly K-food exports to the world by product category");
+  document.querySelector("[data-toggle-kfood]").textContent = kfoodTable ? "Show chart" : "Show as table";
+  const maxDest = Math.max(...t.destinations.map(d => d.last12_usd), 1);
+  document.getElementById("tr-dest").innerHTML = t.destinations.length ? `<table><caption>Candidate markets ranked by Korean K-food exports over the last 12 months (관세청).</caption>
+    <thead><tr><th scope="col">Country</th><th class="bar-cell" scope="col">Last 12 months</th><th class="num" scope="col">12 months before</th><th class="num" scope="col">Change</th></tr></thead><tbody>${
+    t.destinations.map(d => `<tr class="link" data-href="#/country/${esc(d.iso3)}/all"><td><a class="row-link" href="#/country/${esc(d.iso3)}/all">${esc(d.name)}</a></td>
+      <td><div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(d.last12_usd / maxDest * 100).toFixed(1)}%"></span></div><b>${money(d.last12_usd)}</b></div></td>
+      <td class="num">${money(d.prev12_usd)}</td><td class="num ${dir(d.growth)}">${pct(d.growth)}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="empty">Needs 24 months of 관세청 data.</p>`;
+  document.getElementById("tr-com").innerHTML = t.commodities.map(c => {
+    const ys = c.series.map(p => p.price), lo = Math.min(...ys), hi = Math.max(...ys);
+    const pts = ys.map((v, i) => `${(i / Math.max(1, ys.length - 1) * 200).toFixed(1)},${(52 - (v - lo) / ((hi - lo) || 1) * 48).toFixed(1)}`).join(" ");
+    return `<div class="card kpi spark"><div class="label">${esc(COMMODITY[c.commodity] || c.commodity)}</div>
+      <div class="value">${c.latest.toFixed(c.latest < 10 ? 2 : 0)} <span class="fact">${esc(c.unit)}</span></div>
+      <div class="sub ${dir(c.yoy)}">${pct(c.yoy)} vs a year earlier · ${esc(c.latest_month)}</div>
+      <svg viewBox="0 0 200 56" preserveAspectRatio="none" role="img" aria-label="${esc(COMMODITY[c.commodity] || c.commodity)} price over the last ${ys.length} months, from ${lo.toFixed(2)} to ${hi.toFixed(2)} ${esc(c.unit)}"><polyline class="line" points="${pts}" fill="none" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>`;
+  }).join("");
+}
+
+/* ---------- trend + forecast ---------- */
+let trendHl = null, trendTable = false, predYear = null;
+
+function trendData(st) {
+  const t = st.trend;
+  if (!t || !t.history?.length) return null;
+  const lastYear = Math.max(...t.history.map(r => r.year));
+  const top10 = t.history.filter(r => r.year === lastYear).sort((a, b) => a.rank - b.rank).slice(0, 10);
+  const color = Object.fromEntries(top10.map((r, i) => [r.iso3, `var(--s${i + 1})`]));
+  const years = [...new Set([...t.history, ...t.forecast].map(r => r.year))].sort();
+  const get = (iso, y) => (y <= lastYear ? t.history : t.forecast).find(r => r.iso3 === iso && r.year === y);
+  return { t, lastYear, top10, color, years, get };
+}
+
+let trendKey = "";
+function renderTrend(st, force = false) {
+  const key = `${st.trend ? JSON.stringify(st.trend).length : 0}|${trendHl}|${trendTable}`;
+  if (!force && key === trendKey) return;
+  trendKey = key;
+  const d = trendData(st), el = document.getElementById("trend-chart");
+  if (!d) { el.innerHTML = `<p class="empty">The trend appears after the first ranking.</p>`; document.getElementById("trend-chips").innerHTML = ""; return; }
+  document.getElementById("trend-end").textContent = d.years.at(-1);
+  document.getElementById("trend-chips").innerHTML = d.top10.map(r =>
+    `<button data-hl="${esc(r.iso3)}" aria-pressed="${trendHl === r.iso3}" style="--c:${d.color[r.iso3]}">${esc(r.name)}</button>`).join("");
+  document.querySelector("[data-toggle-trend]").textContent = trendTable ? "Show chart" : "Show as table";
+  if (trendTable) {
+    el.innerHTML = `<div class="scroll"><table><caption>Score by year; forecast years are marked “f”.</caption><thead><tr><th scope="col">Country</th>${
+      d.years.map(y => `<th class="num" scope="col">${y}${y > d.lastYear ? " f" : ""}</th>`).join("")}</tr></thead><tbody>${
+      d.top10.map(r => `<tr><td>${esc(r.name)}</td>${d.years.map(y => { const p = d.get(r.iso3, y); return `<td class="num">${p ? p.score.toFixed(1) : "—"}</td>`; }).join("")}</tr>`).join("")
+    }</tbody></table></div>`;
+    return;
+  }
+  const W = 820, H = 320, L = 40, R = 150, T = 12, B = 28, w = W - L - R, h = H - T - B;
+  const pts = d.top10.flatMap(r => d.years.map(y => d.get(r.iso3, y)).filter(Boolean));
+  const lo = Math.max(0, Math.floor((Math.min(...pts.map(p => p.low ?? p.score)) - 2) / 10) * 10);
+  const hi = Math.min(100, Math.ceil((Math.max(...pts.map(p => p.high ?? p.score)) + 2) / 10) * 10);
+  const x = y => L + (y - d.years[0]) / (d.years.at(-1) - d.years[0]) * w, yv = v => T + h - (v - lo) / (hi - lo) * h;
+  const path = (iso, ys) => ys.map(y => d.get(iso, y)).map((p, i, a) => p ? `${i && a[i - 1] ? "L" : "M"}${x(p.year).toFixed(1)},${yv(p.score).toFixed(1)}` : "").join("");
+  const past = d.years.filter(y => y <= d.lastYear), future = [d.lastYear, ...d.years.filter(y => y > d.lastYear)];
+  const order = [...d.top10].reverse();  // draw the TOP3 last so they sit on top
+  const cls = iso => trendHl ? (iso === trendHl ? "hl" : "dim") : "";
+  const band = trendHl ? (() => {
+    const f = future.slice(1).map(y => d.get(trendHl, y)).filter(Boolean), a = d.get(trendHl, d.lastYear);
+    if (!f.length || !a) return "";
+    const top = [a, ...f].map(p => `${x(p.year)},${yv(p.high ?? p.score)}`), bot = [a, ...f].reverse().map(p => `${x(p.year)},${yv(p.low ?? p.score)}`);
+    return `<polygon class="band" points="${[...top, ...bot].join(" ")}" style="fill:${d.color[trendHl]}"/>`;
+  })() : "";
+  const ends = d.top10.map(r => ({ r, y: yv(d.get(r.iso3, d.years.at(-1))?.score ?? r.score) })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+  const ticks = Array.from({ length: (hi - lo) / 10 + 1 }, (_, i) => lo + i * 10);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Line chart of the top 10 markets' scores from ${d.years[0]} to ${d.years.at(-1)}; ${d.lastYear} onwards is a forecast. Use “Show as table” for the values.">
+    ${ticks.map(t => `<line class="gridline" x1="${L}" x2="${L + w}" y1="${yv(t)}" y2="${yv(t)}"/><text x="${L - 8}" y="${yv(t) + 4}" text-anchor="end">${t}</text>`).join("")}
+    ${d.years.map(y => `<text x="${x(y)}" y="${H - 6}" text-anchor="middle">${y}</text>`).join("")}
+    <line class="divider" x1="${x(d.lastYear)}" x2="${x(d.lastYear)}" y1="${T}" y2="${T + h}"/>
+    <text x="${x(d.lastYear) + 6}" y="${T + 12}">Forecast →</text>
+    ${band}
+    ${order.map(r => `<g class="${cls(r.iso3)}"><path class="line" style="stroke:${d.color[r.iso3]}" d="${path(r.iso3, past)}"/>
+       <path class="line" style="stroke:${d.color[r.iso3]};stroke-dasharray:6 5" d="${path(r.iso3, future)}"/></g>`).join("")}
+    ${ends.map(e => `<text x="${L + w + 8}" y="${e.y + 4}" style="${trendHl === e.r.iso3 ? "font-weight:700;fill:var(--ink)" : ""}" class="${trendHl && trendHl !== e.r.iso3 ? "dim" : ""}">${esc(e.r.name)}</text>`).join("")}
+    <line class="cross" id="tcross" y1="${T}" y2="${T + h}" visibility="hidden"/>
+    <rect id="thit" x="${L}" y="${T}" width="${w}" height="${h}" fill="transparent"/>
+  </svg>`;
+  const svg = el.querySelector("svg"), cross = el.querySelector("#tcross"), tip = document.getElementById("tip");
+  el.querySelector("#thit").addEventListener("mousemove", ev => {
+    const pt = svg.createSVGPoint(); pt.x = ev.clientX; pt.y = ev.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const yr = Math.round(d.years[0] + (loc.x - L) / w * (d.years.at(-1) - d.years[0]));
+    const year = Math.max(d.years[0], Math.min(d.years.at(-1), yr));
+    cross.setAttribute("x1", x(year)); cross.setAttribute("x2", x(year)); cross.setAttribute("visibility", "visible");
+    const rows = d.top10.map(r => ({ r, p: d.get(r.iso3, year) })).filter(o => o.p).sort((a, b) => b.p.score - a.p.score);
+    tip.innerHTML = `<b>${year}${year > d.lastYear ? " (forecast)" : ""}</b><dl>${rows.map(o => `<dt>${esc(o.r.name)}</dt><dd>${o.p.score.toFixed(1)}</dd>`).join("")}</dl>`;
+    tip.hidden = false; tip.style.left = Math.min(ev.clientX + 14, innerWidth - 310) + "px"; tip.style.top = Math.min(ev.clientY + 14, innerHeight - 280) + "px";
+  });
+  el.querySelector("#thit").addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+}
+
+function renderPredicted(st) {
+  const d = trendData(st), el = document.getElementById("pred");
+  if (!d) { el.innerHTML = ""; document.getElementById("pred-years").innerHTML = ""; document.getElementById("pred-note").textContent = ""; return; }
+  const future = d.years.filter(y => y > d.lastYear);
+  if (!future.includes(predYear)) predYear = future.at(-1);
+  document.getElementById("pred-years").innerHTML = future.map(y => `<button data-pred="${y}" aria-pressed="${y === predYear}">${y}</button>`).join("");
+  const yearRows = d.t.forecast.filter(r => r.year === predYear).sort((a, b) => b.p_top3 - a.p_top3 || a.rank - b.rank);
+  const top = yearRows.slice(0, 3), next = yearRows.slice(3, 5);
+  const nowRank = iso => d.t.history.find(r => r.iso3 === iso && r.year === d.lastYear)?.rank;
+  const MODEL = { "no change": "no change", drift: "straight-line trend", "damped drift": "damped trend" };
+  el.innerHTML = top.map(r => {
+    const was = nowRank(r.iso3), move = was ? was - r.rank : 0;
+    return `<article class="card"><div class="t-rank">${predYear} · expected rank #${r.rank}</div>
+      <div class="t-name"><a class="row-link" href="#/country/${esc(r.iso3)}/all">${esc(r.name)}</a></div>
+      <div class="big" style="margin-top:8px">${Math.round(r.p_top3 * 100)}%</div>
+      <div class="fact">chance of being in the TOP3 in ${predYear}</div>
+      <p class="fact" style="margin:8px 0 0">Expected score ${r.score.toFixed(1)} (likely ${r.low.toFixed(0)}–${r.high.toFixed(0)}) · ${
+        move > 0 ? `up ${move} from #${was} today` : move < 0 ? `down ${-move} from #${was} today` : `same as today (#${was})`} · ${MODEL[r.model] || r.model}</p>
+    </article>`;
+  }).join("");
+  const ho = d.t.holdout;
+  const behind = next.length ? `<b>Close behind:</b> ${next.map(r => `${esc(r.name)} ${Math.round(r.p_top3 * 100)}%`).join(", ")}. ` : "";
+  document.getElementById("pred-note").innerHTML = `${behind}${esc(d.t.method)} <b>Accuracy check:</b> forecasting ${ho.year} from ${ho.trained_on} only, the predicted TOP3 (${esc(ho.predicted_top3.join(", "))}) ${
+    ho.predicted_top3.join() === ho.actual_top3.join() ? "matched" : "differed from"} the actual TOP3 (${esc(ho.actual_top3.join(", "))}); the average score error was ${ho.model_mae.toFixed(1)} points (${ho.no_change_mae.toFixed(1)} for simply assuming no change). Macro indicators are not forecast.`;
+}
+
+/* ---------- management ---------- */
+function renderKpis(st) {
+  const top = (st.ranking.all || []).slice(0, 3).map(c => c.reasons?.name || c.iso3);
+  const healthy = st.sources.filter(s => s.status === "success").length;
+  const rows = Object.values(st.rows).reduce((a, b) => a + b, 0);
+  const lastRun = st.runs[0];
+  const rerank = st.runs.find(r => r.events.some(e => e.step === "rerank" && e.status === "ok"));
+  document.getElementById("kpis").innerHTML = [
+    ["Current TOP3", top.length ? top.join(" · ") : "—", rerank ? `re-ranked ${ago(rerank.finished_at)}` : "waiting for data"],
+    ["Sources healthy", `${healthy} of ${st.sources.length}`, healthy === st.sources.length ? "all latest runs succeeded" : "see Sources below"],
+    ["Rows tracked", fmt(rows), "trade, economic, tariff, FX and price data"],
+    ["Last run", lastRun ? ago(lastRun.started_at) : "—", lastRun ? `${lastRun.source} · ${(STATUS[lastRun.status] || [, , lastRun.status])[2].toLowerCase()}` : "no runs yet"],
+  ].map(([l, v, n]) => `<div class="card kpi"><div class="label">${l}</div><div class="value">${esc(v)}</div><div class="sub">${esc(n)}</div></div>`).join("");
+}
+
+function renderSources(st) {
+  const all = document.getElementById("run-all"), busy = st.running.length;
+  all.disabled = busy > 0; all.textContent = busy ? `Running ${busy} source${busy > 1 ? "s" : ""}…` : "Run all sources";
+  document.getElementById("sources").innerHTML = st.sources.map(s => {
+    const running = st.running.includes(s.source);
+    return `<div class="card src-card">
+      <div class="src-head"><span class="src-name">${esc(s.source)}</span>${runBadge(running ? "running" : s.status)}</div>
+      <div class="src-desc">${esc(SOURCE_INFO[s.source] || "")}</div>
+      <dl><dt>Last success</dt><dd>${esc(ago(s.last_success))}</dd><dt>Next scheduled</dt><dd>${esc(s.next_run ? ago(s.next_run) : "—")}</dd></dl>
+      ${s.message && s.status !== "success" ? `<div class="msg">${esc(s.message)}</div>` : ""}
+      <button class="primary" data-run="${esc(s.source)}" ${running ? "disabled" : ""}>${running ? "Running…" : `Run ${esc(s.source)}`}</button>
+    </div>`;
+  }).join("");
+}
+
+function renderFeed(st) {
+  const el = document.getElementById("feed");
+  if (!st.runs.length) { el.innerHTML = `<li class="empty">No runs yet.</li>`; return; }
+  el.innerHTML = st.runs.map((r, i) => {
+    const fixed = r.status === "failed" && st.runs.slice(0, i).some(x => x.source === r.source && x.status === "success");
+    const counts = r.status === "running" ? "" :
+      `<span class="counts">${fmt(r.rows_inserted ?? 0)} new · ${fmt(r.rows_updated ?? 0)} revised · ${fmt(r.rows_unchanged ?? 0)} unchanged${r.rows_invalid ? ` · ${fmt(r.rows_invalid)} rejected` : ""}</span>`;
+    const steps = r.events.map(e => `<span class="step ${esc(e.status)}" title="${esc(e.message || "")}">${esc(e.step)}${e.status !== "ok" ? ": " + esc(e.status) : ""}</span>`).join("");
+    const rerank = r.events.find(e => e.step === "rerank" && e.metrics && e.metrics.top3);
+    return `<li>
+      <div class="run-top"><b>${esc(r.source)}</b>${runBadge(fixed ? "resolved" : r.status)}<span class="tag">${esc(r.trigger)}</span>
+        <span class="muted">${esc(ago(r.started_at))} · ${esc(dur(r))}</span></div>
+      <div>${counts}</div>
+      <div class="steps" aria-label="Steps">${steps}</div>
+      ${rerank ? `<div class="msg">Re-ranked → TOP3: ${esc(rerank.metrics.top3.join(" · "))}</div>` : ""}
+      ${r.error && r.status !== "skipped" ? `<div class="msg">${fixed ? "Was: " : ""}${esc(r.error)}</div>` : ""}
+    </li>`;
+  }).join("");
+}
+
+function renderRevisions(st) {
+  const el = document.getElementById("revisions");
+  if (!st.revisions.length) { el.innerHTML = `<div class="empty">Nothing has been revised yet. When a source corrects a value it sent before, the old and new values appear here.</div>`; return; }
+  el.innerHTML = `<table><caption>Values corrected by their source, newest first</caption><thead><tr><th scope="col">Data</th><th scope="col">Row</th><th scope="col">Field</th><th class="num" scope="col">Old</th><th class="num" scope="col">New</th><th scope="col">When</th></tr></thead><tbody>${
+    st.revisions.map(v => `<tr><td>${esc(v.table_name)}</td><td>${esc(Object.entries(v.row_key).filter(([k]) => k !== "source").map(([, x]) => x).join(" · "))}</td>
+      <td>${esc(v.field)}</td><td class="num">${esc(v.old_value)}</td><td class="num">${esc(v.new_value)}</td><td class="muted">${esc(ago(v.detected_at))}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+/* ---------- shared ---------- */
+function renderFreshness(st) {
+  const ok = st.sources.filter(s => s.last_success).map(s => s.last_success).sort().pop();
+  const text = ok ? `Data updated ${ago(ok)}` : "No data yet";
+  const healthy = st.sources.filter(s => s.status === "success").length;
+  document.getElementById("ov-fresh").innerHTML = `${esc(text)} · <a href="#/management">${healthy} of ${st.sources.length} sources healthy</a>`;
+  document.getElementById("mg-fresh").textContent = `Refreshes every 3 s · ${text}`;
+  document.getElementById("side-foot").textContent = text;
+}
+
+async function refresh() {
+  try {
+    const st = await (await fetch("/api/state")).json();
+    last = st;
+    renderFreshness(st); renderTop3(st); renderTrend(st); renderPredicted(st); renderRanking(st);
+    renderKpis(st); renderSources(st); renderFeed(st); renderRevisions(st);
+  } catch (e) {
+    document.getElementById("side-foot").textContent = "Server not reachable";
+  }
+}
+
+document.addEventListener("click", async e => {
+  if (e.target.closest("[data-make-report]")) {
+    const btn = e.target.closest("[data-make-report]"); btn.disabled = true; btn.textContent = "Generating…";
+    const made = await (await fetch("/api/report", { method: "POST" })).json();
+    btn.disabled = false; btn.textContent = "Generate this week's report";
+    location.hash = `#/reports/${made.week || ""}`; loadReports(made.week); return;
+  }
+  if (e.target.closest("[data-run-all]")) {
+    const btn = e.target.closest("[data-run-all]"); btn.disabled = true; btn.textContent = "Starting…";
+    for (const s of (last?.sources || [])) await fetch(`/api/run?source=${encodeURIComponent(s.source)}`, { method: "POST" });
+    refresh(); return;
+  }
+  const run = e.target.closest("[data-run]");
+  if (run) { run.disabled = true; run.textContent = "Starting…"; await fetch(`/api/run?source=${encodeURIComponent(run.dataset.run)}`, { method: "POST" }); refresh(); }
+  const hl = e.target.closest("[data-hl]");
+  if (hl) { trendHl = trendHl === hl.dataset.hl ? null : hl.dataset.hl; if (last) renderTrend(last); return; }
+  if (e.target.closest("[data-toggle-kfood]")) { kfoodTable = !kfoodTable; renderTrendsPage(); return; }
+  if (e.target.closest("[data-toggle-trend]")) { trendTable = !trendTable; if (last) renderTrend(last); return; }
+  const py = e.target.closest("[data-pred]");
+  if (py) { predYear = +py.dataset.pred; if (last) renderPredicted(last); return; }
+  const row = e.target.closest("tr[data-href]");
+  if (row && !e.target.closest("a")) location.hash = row.dataset.href;
+  const ccat = e.target.closest("[data-ccat]");
+  if (ccat) { location.hash = `#/country/${countryIso}/${ccat.dataset.ccat}`; return; }
+  if (e.target.closest("[data-toggle-table]")) { showTable = !showTable; renderCountry(); return; }
+  const cat = e.target.closest("[data-cat]");
+  if (cat) { category = cat.dataset.cat; renderTabs(); if (last) { renderTop3(last); renderRanking(last); } }
+});
+addEventListener("hashchange", () => { route(); document.getElementById("main").focus(); });
+renderTabs(); route(); refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

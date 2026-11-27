@@ -10,8 +10,8 @@
 
 | Activity → | Set up screening | Rank & compare | Understand a country | Ask & verify | Share | Monitor |
 |---|---|---|---|---|---|---|
-| **Must** | US-01 category, US-02 presets | US-03 weights, US-04 P(TOP3), US-05 TOP3 cards | US-08 profile | US-12 chat, US-13 grounding, US-14 regulation Q&A | US-17 report, US-18 PDF | US-30 warm-up |
-| **Should** | US-06 corrections toggle, US-07 entry mode | US-09 forecast, US-10 TOPSIS | US-11 strategic fit | US-15 agent drives UI, US-16 tool trace | — | US-20…US-26 alerts, simulation |
+| **Must** | US-01 category, US-02 presets | US-03 weights, US-04 P(TOP3), US-05 TOP3 cards | US-08 profile | US-12 chat, US-13 grounding, US-14 regulation Q&A | US-17 report, US-18 PDF | US-30 warm-up, US-22 ingestion, US-34 automation page |
+| **Should** | US-06 corrections toggle, US-07 entry mode | US-09 forecast, US-10 TOPSIS | US-11 strategic fit | US-15 agent drives UI, US-16 tool trace | — | US-20, US-21, US-23…US-26 alerts, simulation; US-35 ranking backtest |
 | **Could** | — | US-27 concentration view | US-28 competition context | — | — | US-29 tariff impact (monthly) |
 
 ---
@@ -128,9 +128,11 @@
 **As** P2, **I want** to choose the countries and categories I watch, plus the alert sensitivity and email language, **so that** I only hear about what matters to me.
 - Defaults: current TOP3, all categories, medium sensitivity, UI language, email on.
 
-### US-22 · Daily refresh · Should · 8 pts · FR-3.1
-**As** P1, **I want** the data refreshed daily, **so that** rankings don't go stale.
-- Runs at 02:00 KST, can also be triggered manually. One failing source doesn't block the others. A run log is kept.
+### US-22 · Scheduled ingestion · Must · 8 pts · FR-3.1
+**As** P1, **I want** the data refreshed automatically, **so that** rankings don't go stale.
+- Each source runs on its own schedule (daily 02:00 KST for FX and regulation pages, weekly for trade, macro and tariffs, monthly for commodity prices) and can also be triggered manually.
+- New and revised values are detected; each revised value is recorded with old → new. Re-running with no source change writes no rows.
+- One failing source doesn't block the others. Each run and each step is logged.
 - The dashboard shows "data as of" per source.
 - No Google Trends calls in automation.
 
@@ -178,10 +180,23 @@
 
 ### US-32 · Current tariffs with overrides · Must · 3 pts · FR-4.3
 **As** P1, **I want** tariffs to reflect current policy (e.g. the US 15% reciprocal tariff), **so that** entry-ease scores are realistic.
-- The tariff table records MFN, preferential (FTA) and override rates with effective dates and sources. The applied rate is the highest valid one.
+- The tariff table records MFN, preferential (FTA) and additional-duty rates with effective dates and sources.
+- Applied rate = min(MFN, eligible preferential rate) + additional duties in force. Example: US = KORUS 0% + 15% reciprocal = 15%.
 
 ### US-33 · Field-data ready · Should · 3 pts · FR-4.1
 **As** the 본선 team, **we want** to load Lotte field data through the same schema, **so that** we can swap data without code changes.
+
+### US-34 · Automation & Data Health page · Must · 5 pts · FR-4.6
+**As** a judge or P1, **I want** to see the data pipeline working, **so that** I trust the TOP3 comes from current, automated data.
+- A live run feed shows each run's steps (fetch → validate → upsert → re-rank) as they happen, with durations.
+- Each source shows last success, next scheduled run and a status badge.
+- A run's detail shows rows added, revised (old → new) and rejected by validation, and whether the TOP3 changed.
+- "Run now" (signed-in, rate-limited) starts a run, which appears in the feed within 30 s.
+- A ranking-history chart shows how the TOP3 moved across runs.
+
+### US-35 · Ranking backtest · Should · 3 pts · DR-5
+**As** a judge, **I want** evidence that the scoring method picks markets that actually grew, **so that** the TOP3 is more than a weighting exercise.
+- Score using 2015–19 data only; report the Spearman correlation with actual 2020–25 Korean export growth, per category and overall, in `eval/reports/ranking_backtest.md`.
 
 ---
 

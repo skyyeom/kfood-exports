@@ -1,13 +1,13 @@
 ﻿ID,Name,Outline Level,Start,Finish,Duration,Milestone,Predecessors,% Complete,Notes
 1,Horizon 1 — Prove (Lotte AX Challenge),1,2026-10-26,2027-04-09,120 days,No,,0,H1 · Summary
 2,R0 Discovery & PM artefacts,2,2026-10-26,2026-10-30,5 days,No,,100,H1 · Product · Grounded problem & requirements
-3,"M1 Data foundation (schema, pipeline, provenance, tariffs)",2,2026-11-02,2026-11-13,10 days,No,2,0,H1 · Data · Trusted evidence base
-4,"M2 Scoring, P(TOP3), presets, forecast engine",2,2026-11-16,2026-11-27,10 days,No,3,0,H1 · Intelligence · Defensible TOP3
-5,"M3 API + dashboard MVP (KO/EN, warm-up)",2,2026-11-30,2026-12-11,10 days,No,4,0,H1 · Experience · Decision speed
-6,"M4 AI agent, verifier, regulation RAG, TOP3 report",2,2026-12-14,2027-01-08,20 days,No,5,0,H1 · AI agent · Trusted AI answers
-7,R1.0 예선 demo-ready,2,2027-01-08,2027-01-08,0 days,Yes,6,0,H1 · Milestone
-8,"M5 Monitoring: auth, daily refresh, alerts, simulation",2,2027-01-11,2027-01-29,15 days,No,7,0,H1 · Monitoring · Market visibility
-9,"M6 Evaluation reports, time-savings, proposal, video",2,2027-02-01,2027-02-12,10 days,No,8,0,H1 · Product · Credible impact claims
+3,"M1 Data foundation + automated ingestion (schema, scheduled pipeline, provenance, revisions)",2,2026-11-23,2026-12-04,10 days,No,2,0,H1 · Data · Trusted evidence base
+4,"M2 Scoring, P(TOP3), presets, forecast engine",2,2026-12-07,2026-12-18,10 days,No,3,0,H1 · Intelligence · Defensible TOP3
+5,"M3 API + dashboard MVP incl. Automation & Data Health page (KO/EN, warm-up)",2,2026-12-21,2027-01-08,15 days,No,4,0,H1 · Experience · Decision speed
+6,"M4 AI agent, verifier, regulation RAG, TOP3 report",2,2027-01-11,2027-01-29,15 days,No,5,0,H1 · AI agent · Trusted AI answers
+7,R1.0 예선 demo-ready,2,2027-01-29,2027-01-29,0 days,Yes,6,0,H1 · Milestone
+8,"M5 Monitoring: auth, watchlists, anomalies, email, simulation",2,2027-02-01,2027-02-05,5 days,No,7,0,H1 · Monitoring · Market visibility
+9,"M6 Evaluation reports, time-savings, proposal, video",2,2027-02-08,2027-02-12,5 days,No,8,0,H1 · Product · Credible impact claims
 10,R1.1 예선 submission (anticipated),2,2027-02-12,2027-02-12,0 days,Yes,9,0,H1 · Milestone
 11,"R2.0 본선 prototype: Lotte field data, product mapping",2,2027-03-01,2027-04-02,25 days,No,10,0,H1 · Data · Internal data loop
 12,본선 demo (anticipated),2,2027-04-09,2027-04-09,0 days,Yes,11,0,H1 · Milestone

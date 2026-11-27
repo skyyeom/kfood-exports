@@ -19,12 +19,14 @@ We order work by **(a) what the challenge scores**, **(b) risk reduction** and *
 | Milestone | Stories | Demo at exit | Exit criteria |
 |---|---|---|---|
 | **M0 — Discovery** ✅ | — | PM docs | Problem, market and data analysis, PRD, stories, roadmap, metrics, decision log done |
-| **M1 — Data foundation** | US-31, US-32, US-33 (schema), Trends snapshot, Taiwan decision | Indicator tables + data dictionary | Pipeline reproduces the [03](03_data_analysis.md) numbers within ±1%; every row has provenance; coverage report generated |
+| **M1 — Data foundation + automated ingestion** | US-22, US-31, US-32, US-33 (schema), Trends snapshot, Taiwan decision | Scheduled GitHub Actions runs writing to Supabase; run log with revisions; [data dictionary](../data_dictionary.md) | Pipeline reproduces the [03](03_data_analysis.md) scores within ±1% and P(TOP3) within ±0.03; every row has provenance; re-runs are idempotent; one failing source doesn't block others |
 | **M2 — Scoring MVP** | US-01…US-07, US-10, US-11 (engine side), forecast engine (US-09 backend) | Notebook/CLI TOP3 per category and preset | Unit tests for normalisation, weights, filters, P(TOP3); TOP3 matches the [03 §3](03_data_analysis.md) preliminary screen with the same settings |
-| **M3 — Dashboard MVP** | US-01…US-08 UI, US-09 chart, US-30, KO/EN | Deployed preview: sliders → TOP3 cards → country drawer | p95 re-rank ≤ 500 ms; cold-start loader works; Lighthouse accessibility ≥ 90 |
+| **M3 — Dashboard MVP** | US-01…US-08 UI, US-09 chart, US-30, US-34 Automation page, KO/EN | Deployed preview: sliders → TOP3 cards → country drawer | p95 re-rank ≤ 500 ms; cold-start loader works; Lighthouse accessibility ≥ 90 |
 | **M4 — Agent & report** | US-12…US-18 | Ask → grounded answer with citations → agent changes the UI → TOP3 report → PDF | Golden-set targets (PRD §5.2) met; fuzz tests pass |
-| **M5 — Monitoring** | US-20…US-26 | Watchlist → simulated anomaly → re-rank + alert + email | Daily job green 7 runs in a row; simulation end-to-end Playwright test passes; isolation tests pass |
+| **M5 — Monitoring** | US-20, US-21, US-23…US-26 (ingestion already runs from M1) | Watchlist → simulated anomaly → re-rank + alert + email | Daily job green 7 runs in a row; simulation end-to-end Playwright test passes; isolation tests pass |
 | **M6 — Submission** | US-19, evaluation reports, proposal, demo video | Final demo | All PRD §5 metrics reported; README baseline + measured time; demo video recorded |
+
+**Re-baselined 2026-11-24** (M1 started late): M1 23 Nov–4 Dec, M2 7–18 Dec, M3 21 Dec–8 Jan, M4 11–29 Jan, M5 1–5 Feb, M6 8–12 Feb. The submission date is unchanged; M5 is shorter because ingestion moved into M1. Source: [`analysis/pm_config.py`](../../analysis/pm_config.py).
 
 **Critical path:** M1 → M2 → M3 → M4. M5 can start after M2 (anomaly engine) and M3 (alerts UI). Evaluation assets (golden set, backtests) are built alongside M2–M4, not at the end.
 
@@ -36,10 +38,13 @@ Cut from the bottom first:
 4. LLM-written briefs. Template-only emails are acceptable.
 5. Login + watchlists. The simulation then emails a fixed demo address.
 
+Scheduled ingestion and the Automation page are not on this list (D20).
+
 **Never cut:** provenance, data corrections, P(TOP3), the verifier, the evaluation report and cold-start handling. These protect the accuracy and credibility scores.
 
 ## 4. Judge demo script (target ≤ 5 minutes)
-1. Open the site → warm-up loader → dashboard (cached TOP3 visible immediately).
+1. Open the site → dashboard with the latest TOP3 from the database (the agent's warm-up loader shows separately).
+   - Open **Automation & Data Health**: show last night's runs, a revised value (old → new), and press **Run now** to watch a live run.
 2. Show the default TOP3 with P(TOP3) and the reason chips; open one country's evidence.
 3. Switch the preset "Scale" → "Growth/entry", then the category to **Ice cream**, and show how the TOP3 changes and why.
 4. Toggle "include hubs" to show the Netherlands jump, explaining *why the tool corrects for hubs by default*.

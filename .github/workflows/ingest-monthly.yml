@@ -1,0 +1,22 @@
+name: Ingest (monthly)
+# 04:00 KST on the 6th. Also runnable from the Actions tab or the dashboard's "Run now" (workflow_dispatch).
+on:
+  schedule:
+    - cron: "0 19 5 * *"
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "One source to run (blank = all monthly sources: pinksheet)"
+        required: false
+        default: ""
+
+concurrency:
+  group: ingest-monthly
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    uses: ./.github/workflows/_ingest.yml
+    with:
+      sources: ${{ inputs.source || 'pinksheet' }}
+    secrets: inherit

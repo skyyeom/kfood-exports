@@ -118,12 +118,12 @@ Details: [01 §2](pm/01_problem_discovery.md).
 
 | Priority | Capability |
 |---|---|
-| **Must** | Data pipeline with provenance (Comtrade, World Bank, Korea-reported exports, tariffs); multi-criteria scoring with sliders and presets; TOP3 cards with reason packs; sensitivity (P(TOP3)); category filter; hub/sanction handling; country profile; agent chat with tools + verifier + citations; regulation RAG; TOP3 report (Markdown + PDF via print); KO/EN; cold-start handling; evaluation suite |
-| **Should** | TOPSIS cross-check; forecast with backtest and intervals; entry-mode lens; strategic-fit factor; Google Trends snapshot pillar; login + watchlists; daily refresh; anomaly detection; email briefs; simulation sandbox |
+| **Must** | Automated, scheduled data pipeline with provenance and revision tracking (Comtrade, World Bank, Korea-reported exports, tariffs, FX, commodity prices); Automation & Data Health page; multi-criteria scoring with sliders and presets; TOP3 cards with reason packs; sensitivity (P(TOP3)); category filter; hub/sanction handling; country profile; agent chat with tools + verifier + citations; regulation RAG; TOP3 report (Markdown + PDF via print); KO/EN; cold-start handling; evaluation suite |
+| **Should** | TOPSIS cross-check; forecast with backtest and intervals; entry-mode lens; strategic-fit factor; Google Trends snapshot pillar; login + watchlists; 관세청 monthly data; anomaly detection; email briefs; simulation sandbox |
 | **Could** | Competition context per market; concentration/diversification view; 관세청 monthly data for tariff-impact tracking; Taiwan data source |
 | **Won't (예선)** | World map; paid data; Lotte internal data; SKU-level forecasting; mobile app |
 
-> Monitoring features are "Should" rather than "Must" because the core challenge asks for TOP3 plus evidence. Monitoring is what makes the product useful beyond a one-off study.
+> Alerting features (anomalies, email, simulation) are "Should" because the core challenge asks for TOP3 plus evidence. Scheduled ingestion and the Automation page are "Must" (D20): they show that the TOP3 comes from a live, automated process rather than a one-off study.
 
 ---
 
@@ -143,14 +143,14 @@ Details: [01 §2](pm/01_problem_discovery.md).
 - **Output per country:** score, rank, P(TOP3), pillar breakdown, a reason pack (top 3 drivers, weakest factor, cited facts) and data-coverage badges.
 
 ### 8.3 Architecture (summary)
-- **Frontend:** Next.js on Vercel.
-- **Backend:** FastAPI + LangGraph + Chroma on Hugging Face Spaces (Docker).
-- **Auth and storage:** Supabase (Auth, Postgres, Storage).
-- **Automation:** GitHub Actions daily job.
+- **Frontend:** Vite + React on GitHub Pages. It reads data live from Supabase, so the dashboard works while the backend sleeps.
+- **Backend:** FastAPI + LangGraph + Chroma on Hugging Face Spaces (Docker), deployed from GitHub.
+- **Data, auth and storage:** Supabase (Postgres as the single source of truth, Realtime for the live run feed, Auth, Storage for raw payloads).
+- **Automation:** GitHub Actions cron jobs per source (daily, weekly, monthly), which can also be triggered from the dashboard.
 - **Email:** Brevo SMTP.
 - **LLM and embeddings:** the LLM provider is pluggable; embeddings run locally (multilingual).
 
-Full detail is in the engineering plan.
+Full detail is in the [engineering plan](engineering_plan.md); tables are in the [data dictionary](data_dictionary.md). The gaps that led to this design are in the [gap analysis](gap_analysis_and_m1_plan.md).
 
 ---
 
@@ -190,7 +190,7 @@ Requirement IDs link to user stories in [04_user_stories.md](pm/04_user_stories.
 ### Epic 3 — Workflow Transformation & Monitoring
 | ID | Requirement | Traces |
 |---|---|---|
-| FR-3.1 | Daily refresh (02:00 KST) of all automated sources; idempotent; per-source failure isolation; run log. Google Trends is excluded (static snapshot) | G4 |
+| FR-3.1 | Scheduled ingestion per source (daily 02:00 KST for FX and regulation pages; weekly for trade, macro and tariffs; monthly for commodity prices) plus manual trigger. Each run detects **new and revised** values and records the diff; idempotent; per-source failure isolation; run and step log. Google Trends is excluded (static snapshot) | G4 |
 | FR-3.2 | Anomaly detection: trade spike/drop, TOP3 change, tariff/regulation document change, FX swing (Trends only on manual snapshot refresh) | G4 |
 | FR-3.3 | Login (magic link / Google). Watchlist of countries × categories; sensitivity; email language; on/off | G4 |
 | FR-3.4 | Email brief only when a watched signal fires; max 1 per user per day; LLM-written with the verifier, template fallback; unsubscribe link | G4 |
@@ -205,7 +205,8 @@ Requirement IDs link to user stories in [04_user_stories.md](pm/04_user_stories.
 | FR-4.2 | Korea-reported exports are the primary measure for Korea flows; partner-reported data is context | DR-3 |
 | FR-4.3 | Tariff table supports current overrides (e.g. the US 15% reciprocal tariff) with effective dates and sources | MR-4 |
 | FR-4.4 | Taiwan: alternative source or a "partial data" badge | DR-10 |
-| FR-4.5 | `/v1/health` with component readiness; frontend warm-up loader; cached TOP3 fallback | Judges |
+| FR-4.5 | `/v1/health` with component readiness; frontend warm-up loader; latest TOP3 read directly from the database while the API wakes | Judges |
+| FR-4.6 | **Automation & Data Health page:** live run feed, per-source freshness and next run, "Run now", per-run changes (rows added, revised old → new, failed validation), coverage matrix, ranking history | G4, DR-4 |
 
 ---
 
@@ -227,13 +228,15 @@ Requirement IDs link to user stories in [04_user_stories.md](pm/04_user_stories.
 ## 11. Data requirements
 | Dataset | Source | Refresh | Notes |
 |---|---|---|---|
-| Category imports by country (World, from Korea) | UN Comtrade | Daily check, annual data | Hubs flagged |
-| Korea exports by destination × HS | UN Comtrade (Korea-reported); 관세청 (monthly, *Could*) | Daily check | Primary measure of K-momentum |
-| Macro indicators | World Bank WDI | Daily check | GDP pc, growth, population, urbanisation, consumption, inflation |
+| Category imports by country (World, from Korea) | UN Comtrade | Weekly check, annual data; revisions recorded | Hubs flagged |
+| Korea exports by destination × HS | UN Comtrade (Korea-reported) | Weekly check | Primary measure of K-momentum |
+| Macro indicators | World Bank WDI | Weekly check | GDP pc, growth, population, urbanisation, consumption, inflation |
 | Logistics | World Bank LPI | Static (2023) | Coarse proxy |
-| Tariffs | WITS/TRAINS + manual overrides | Daily check + manual | Effective dates |
+| Tariffs | WITS/TRAINS + override file | Weekly check | Effective dates; applied = min(MFN, preferential) + additional duties |
 | Consumer trends | Google Trends (one-off local snapshot); Hallyu indicators | Manual | As-of date displayed |
 | FX | open.er-api / Frankfurter | Daily | For FX-swing alerts |
+| Korea exports, monthly: HS6 × destination, HS10 world totals, all-goods totals per country | 관세청 via data.go.kr (free key; 3 APIs) | Monthly, after the ~15th update | Monthly monitoring, product-level fit, forecasts. Validated: annual sums equal Comtrade's Korea-reported figures 2020–25 |
+| Commodity prices | World Bank Pink Sheet (cocoa, sugar, wheat, palm oil) | Monthly | Context for price-driven value growth (DR-9) |
 | Regulation corpus | Public regulator and trade-body documents (FDA, GACC, BPJPH, JAKIM, FSSAI, GSO, EU Novel Food, KOTRA/aT summaries) | Monitored URLs, daily hash check | Metadata: source URL, title, country, date |
 
 ---
