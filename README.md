@@ -9,6 +9,7 @@ A dashboard and AI agent that ranks export markets for Lotte Wellfood's confecti
 | [Engineering plan](docs/engineering_plan.md) | Architecture, data sources, ingestion flow, API, dashboard pages |
 | [Data dictionary](docs/data_dictionary.md) | Tables, keys, units, provenance |
 | [Gap analysis & M1 plan](docs/gap_analysis_and_m1_plan.md) | What the earlier plan was missing and how it was fixed |
+| [Supabase setup](docs/supabase_setup.md) | Step-by-step: create the project, fill `.env`, run the setup |
 | [BI guide](docs/bi_guide.md) | Connecting Power BI, Looker Studio, Metabase or Excel to the data |
 | [Progress](docs/progress.md) | What is built and what is next |
 | [PM docs](docs/pm/README.md) | Vision, discovery, market and data analysis, stories, roadmap, risks |
