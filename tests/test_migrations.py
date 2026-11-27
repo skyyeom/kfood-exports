@@ -22,6 +22,6 @@ def test_migration_grants_public_read_and_revokes_writes_explicitly():
     # Regression: public read relied on Supabase's default grants; a database without them denied the dashboard
     sql = migration_sql()
 
-    for table in ("trade_flows", "bi_rankings", "watchlist"):
+    for table in ("trade_flows", "bi_rankings", "reports"):
         assert f"grant select on {table} to anon, authenticated;" in sql
         assert f"revoke insert, update, delete, truncate on {table} from anon, authenticated;" in sql

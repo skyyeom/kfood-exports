@@ -74,11 +74,13 @@ def test_reports_are_stored_and_listed_newest_first():
     assert store.get_report("2026-W48")["title"].startswith("Week 48")
 
 
-def test_report_includes_tracked_markets_and_their_alerts():
+def test_report_lists_alerts_for_the_top_markets():
     store = seeded_store()
-    store.watch("PHL")
+    current = store.latest_ranking()
+    earlier = [dict(c, rank={"PHL": 5, "IND": 3}.get(c["iso3"], c["rank"])) for c in current]
+    store.save_ranking("old-run", "all", "corrected", "default", earlier, computed_at="2026-11-16T00:00:00.000+00:00")
 
     r = build_report(store, now=NOW)
 
-    assert [m["name"] for m in r["tracked"]] == ["Philippines"]
-    assert "## Tracked markets" in to_markdown(r)
+    assert any(a["iso3"] == "PHL" and "Entered the TOP3" in a["text"] for a in r["alerts"])
+    assert "## Alerts" in to_markdown(r) and "## Tracked markets" not in to_markdown(r)

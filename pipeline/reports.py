@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from pipeline.alerts import market_alerts
 from pipeline.config import CANDIDATES, FTA_WITH_KOREA
 from pipeline.db import Store
 from pipeline.insights import trends_state
-from pipeline.tracker import tracker_state
 
 CATEGORY = {"1704": "Sugar confectionery", "1806": "Chocolate", "1905": "Bakery & biscuits", "2105": "Ice cream"}
 COMMODITY = {"cocoa": "Cocoa", "sugar_world": "Sugar (world)", "wheat_us_hrw": "Wheat (US HRW)", "palm_oil": "Palm oil"}
@@ -147,10 +147,7 @@ def build_report(store: Store, now: datetime | None = None) -> dict:
         "forecast": forecast,
         "prices": [{k: c[k] for k in ("commodity", "unit", "latest", "latest_month", "yoy")} for c in t["commodities"]],
         "health": health,
-        "tracked": [
-            {k: m[k] for k in ("iso3", "name", "rank", "rank_change", "alerts")}
-            for m in tracker_state(store, now=now)["markets"]
-        ],
+        "alerts": market_alerts(store, now=now),
     }
 
 
@@ -219,13 +216,10 @@ def to_markdown(r: dict) -> str:
         )
     else:
         lines.append("No forecast yet.")
-    lines += ["", "## Tracked markets", ""]
-    if r.get("tracked"):
-        for m in r["tracked"]:
-            alerts = " ".join(a["text"] for a in m["alerts"]) or "No alerts."
-            lines.append(f"- **{m['name']}** (#{m['rank']}): {alerts}")
-    else:
-        lines.append("- No markets tracked. Pin markets on their country page.")
+    lines += ["", "## Alerts", ""]
+    lines += [f"- **{a['name']}**: {a['text']}" for a in r.get("alerts", [])] or [
+        "- No alerts for the top 10 markets this week."
+    ]
     lines += ["", "## Ingredient prices", ""]
     lines += [
         f"- {COMMODITY.get(p['commodity'], p['commodity'])}: {p['latest']:.2f} {p['unit']} in "

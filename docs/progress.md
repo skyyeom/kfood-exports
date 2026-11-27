@@ -13,11 +13,9 @@ _Last updated 2026-11-27._
   - Management: run feed, sources, Run all.
 
 ## Done since the pause (2026-11-25)
-- **Tracker:**
-  - Track any market from its country page.
-  - The Tracker page shows rank and change since last week, monthly and 12-month exports, and the forecast TOP3 chance.
-  - Alerts fire for a move of 2+ places, entering or leaving the TOP3, a ±30% monthly export swing and revised tariffs.
-  - The sidebar shows an alert badge, and the weekly report has a section on tracked markets.
+- **Alerts** (the Tracker page was tried and removed on 2026-11-27, because it overlapped the Overview, country pages and reports):
+  - Rules apply automatically to the current top 10 markets: a move of 2+ places, entering or leaving the TOP3, a ±30% monthly export swing, and revised tariffs.
+  - Alerts appear in each weekly report.
 - **BI:**
   - Flat `bi_*` tables are refreshed on every re-rank, alongside views over the raw data.
   - A read-only `bi_reader` role is in the migration.

@@ -28,7 +28,6 @@ from pipeline.insights import trends_state
 from pipeline.raw import LocalRawStore
 from pipeline.run import run_sources
 from pipeline.sources import SOURCES
-from pipeline.tracker import tracker_state
 
 PAGE = Path(__file__).with_name("preview.html")
 
@@ -91,7 +90,6 @@ def state(store: Store) -> dict:
         "revisions": _records(revisions),
         "ranking": {c: store.latest_ranking(category=c) for c in ("all", "1704", "1806", "1905", "2105")},
         "trend": store.latest_ranking(variant="trend") or None,
-        "watched": store.watched(),
         "rows": {
             t: len(store.read(t))
             for t in ("trade_flows", "country_indicators", "tariffs", "fx_rates", "commodity_prices")
@@ -209,8 +207,6 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Disposition", 'attachment; filename="wellgtm-bi-data.zip"')
             self.end_headers()
             self.wfile.write(buf.getvalue())
-        elif path == "/api/tracker":
-            self._send(200, json.dumps(tracker_state(self.store), default=str).encode())
         elif path == "/api/reports":
             self._send(200, json.dumps(self.store.list_reports()).encode())
         elif path.startswith("/api/reports/"):
@@ -235,14 +231,6 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urlparse(self.path)
-        if url.path == "/api/watch":
-            q = parse_qs(url.query)
-            iso, on = (q.get("iso") or [""])[0].upper(), (q.get("on") or ["1"])[0] == "1"
-            try:
-                self.store.watch(iso) if on else self.store.unwatch(iso)
-            except KeyError:
-                return self._send(400, b'{"error": "unknown country"}')
-            return self._send(200, json.dumps({"watched": self.store.watched()}).encode())
         if url.path == "/api/report":
             return self._send(201, json.dumps(self._report(), default=str).encode())
         source = (parse_qs(url.query).get("source") or [""])[0]

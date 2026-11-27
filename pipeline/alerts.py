@@ -1,4 +1,4 @@
-"""Tracker: the markets a user watches, what changed since last week, and alerts worth acting on."""
+"""Alerts worth acting on for the top markets: rank moves, TOP3 changes, export swings, tariff revisions."""
 
 from __future__ import annotations
 
@@ -38,25 +38,25 @@ def _exports(trade, iso: str) -> dict | None:
     }
 
 
-def tracker_state(store: Store, now: datetime | None = None) -> dict:
+def market_alerts(
+    store: Store, now: datetime | None = None, isos: list[str] | None = None, top: int = 10
+) -> list[dict]:
+    """Alerts for the given markets (default: the current top 10), comparing with the ranking a week earlier."""
     now = now or datetime.now(UTC)
     week_ago = (now - timedelta(days=7)).isoformat(timespec="milliseconds")
-    current = {r["iso3"]: r for r in store.latest_ranking()}
+    current = store.latest_ranking()
+    rank = {r["iso3"]: r["rank"] for r in current}
     previous = {r["iso3"]: r["rank"] for r in (store.ranking_before(week_ago) or [])}
-    trend = store.latest_ranking(variant="trend") or {}
-    horizon = max((r["year"] for r in trend.get("forecast", [])), default=None)
-    forecast = {r["iso3"]: r for r in trend.get("forecast", []) if r["year"] == horizon}
+    isos = isos or [r["iso3"] for r in current[:top]]
     trade = store.read("trade_flows")
     tariff_revisions = store.revisions_since(week_ago, "tariffs")
 
-    markets = []
-    for iso in store.watched():
-        row = current.get(iso)
-        rank, was = (row or {}).get("rank"), previous.get(iso)
+    alerts = []
+    for iso in isos:
+        found = [a for a in [_rank_alert(previous.get(iso), rank.get(iso))] if a]
         exports = _exports(trade, iso)
-        alerts = [a for a in [_rank_alert(was, rank)] if a]
         if exports and exports["yoy"] is not None and abs(exports["yoy"]) >= EXPORT_SWING:
-            alerts.append(
+            found.append(
                 {
                     "kind": "exports",
                     "text": f"Korean exports {exports['yoy'] * 100:+.0f}% on a year earlier "
@@ -66,31 +66,12 @@ def tracker_state(store: Store, now: datetime | None = None) -> dict:
         for rev in tariff_revisions.itertuples():
             key = rev.row_key
             if key.get("importer_iso3") == iso:
-                alerts.append(
+                found.append(
                     {
                         "kind": "tariff",
                         "text": f"Tariff revised: HS {key['hs']} {key['rate_type']} "
                         f"{float(rev.old_value):.1f} → {float(rev.new_value):.1f}%.",
                     }
                 )
-        markets.append(
-            {
-                "iso3": iso,
-                "name": CANDIDATES[iso][1],
-                "rank": rank,
-                "score": (row or {}).get("score"),
-                "rank_week_ago": was,
-                "rank_change": (was - rank) if was and rank else None,
-                "headline": (row or {}).get("reasons", {}).get("headline"),
-                "exports": exports,
-                "forecast": {"year": horizon, "p_top3": forecast[iso]["p_top3"], "rank": forecast[iso]["rank"]}
-                if iso in forecast
-                else None,
-                "alerts": alerts,
-            }
-        )
-    return {
-        "markets": markets,
-        "generated_at": now.isoformat(timespec="seconds"),
-        "rules": {"rank_move_places": RANK_MOVE, "export_swing": EXPORT_SWING},
-    }
+        alerts += [a | {"iso3": iso, "name": CANDIDATES[iso][1]} for a in found]
+    return alerts

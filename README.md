@@ -29,7 +29,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # Python 3.12+
 ```
 For local runs, keep keys in `.env` (gitignored) and load them with `set -a; . ./.env; set +a`. Without `DATABASE_URL`, data goes to `data/local.db` (SQLite) and raw responses to `data/raw/`.
 
-**Local dashboard:** `.venv/bin/python -m pipeline.preview`, then open http://localhost:8765. Pages: Overview (TOP3, predicted TOP3, top-10 trend, all countries), Tracker (watched markets and alerts), Trends, Weekly reports, Management (sources, run feed, what changed, Run all, BI download), and a page per country. It reads live from the same database the scheduled jobs write to.
+**Local dashboard:** `.venv/bin/python -m pipeline.preview`, then open http://localhost:8765. Pages: Overview (TOP3, predicted TOP3, top-10 trend, all countries), Trends, Weekly reports (with alerts for the top 10 markets), Management (sources, run feed, what changed, Run all, BI download), and a page per country. It reads live from the same database the scheduled jobs write to.
 
 ## Turn on the automation (one-time setup)
 1. Create a free Supabase project. **Before any workflow runs**, open the SQL editor and run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql). It creates the tables, read-only RLS policies, the Realtime feed and the private `raw` bucket.

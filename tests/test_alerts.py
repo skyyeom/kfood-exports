@@ -1,4 +1,4 @@
-"""Tracker: watched markets, their changes since last week, and alerts."""
+"""Alerts for the current top markets: rank moves, TOP3 changes, export swings and tariff revisions."""
 
 from datetime import UTC, datetime
 
@@ -6,8 +6,8 @@ import pytest
 from test_preview import months, seeded_store
 from test_run import StaticSource
 
+from pipeline.alerts import market_alerts
 from pipeline.run import run_sources
-from pipeline.tracker import tracker_state
 
 NOW = datetime(2026, 11, 25, 12, tzinfo=UTC)
 
@@ -38,47 +38,43 @@ def store():
     return s
 
 
-def test_watchlist_can_add_and_remove_markets(store):
-    store.watch("PHL")
-    store.watch("USA")
-    store.unwatch("USA")
-
-    assert store.watched() == ["PHL"]
-
-
-def test_tracked_market_shows_rank_change_since_a_week_earlier(store):
-    store.watch("PHL")
-
-    [phl] = tracker_state(store, now=NOW)["markets"]
-
-    assert (phl["name"], phl["rank"], phl["rank_week_ago"], phl["rank_change"]) == ("Philippines", 3, 5, 2)
+def by_country(alerts):
+    out = {}
+    for a in alerts:
+        out.setdefault(a["iso3"], []).append(a)
+    return out
 
 
-def test_alerts_flag_entering_the_top3_and_big_rank_moves(store):
-    store.watch("PHL")
+def test_alerts_cover_the_current_top10_by_default(store):
+    alerts = market_alerts(store, now=NOW)
 
-    alerts = [a["text"] for a in tracker_state(store, now=NOW)["markets"][0]["alerts"]]
+    top10 = {r["iso3"] for r in store.latest_ranking()[:10]}
+    assert {a["iso3"] for a in alerts} <= top10
 
-    assert "Entered the TOP3 (#5 → #3)." in alerts
+
+def test_entering_the_top3_is_flagged(store):
+    texts = [a["text"] for a in by_country(market_alerts(store, now=NOW))["PHL"]]
+
+    assert "Entered the TOP3 (#5 → #3)." in texts
 
 
-def test_alerts_flag_a_large_change_in_monthly_exports(store):
-    store.watch("PHL")
+def test_leaving_the_top3_is_flagged(store):
+    texts = [a["text"] for a in by_country(market_alerts(store, now=NOW))["IND"]]
 
-    phl = tracker_state(store, now=NOW)["markets"][0]
+    assert "Left the TOP3 (#3 → #4)." in texts
 
-    assert phl["exports"]["period"] == "202610" and phl["exports"]["yoy"] == pytest.approx(0.5)
-    assert any(a["kind"] == "exports" and "+50%" in a["text"] for a in phl["alerts"])
+
+def test_a_large_change_in_monthly_exports_is_flagged(store):
+    exports = [a for a in by_country(market_alerts(store, now=NOW))["PHL"] if a["kind"] == "exports"]
+
+    assert len(exports) == 1 and "+50%" in exports[0]["text"]
 
 
 def test_a_steady_market_has_no_alerts(store):
-    store.watch("CHN")
-
-    assert tracker_state(store, now=NOW)["markets"][0]["alerts"] == []
+    assert "CHN" not in by_country(market_alerts(store, now=NOW))
 
 
-def test_alerts_flag_revised_tariffs_for_a_tracked_market(store):
-    store.watch("USA")
+def test_revised_tariffs_are_flagged(store):
     tariff = {
         "source": "override",
         "importer_iso3": "USA",
@@ -91,11 +87,6 @@ def test_alerts_flag_revised_tariffs_for_a_tracked_market(store):
     run_sources([StaticSource("tariffs", "tariffs", [tariff | {"rate_pct": 15.0}])], store, http=None)
     run_sources([StaticSource("tariffs", "tariffs", [tariff | {"rate_pct": 10.0}])], store, http=None)
 
-    usa = tracker_state(store, now=datetime.now(UTC))["markets"][0]
+    usa = by_country(market_alerts(store, now=datetime.now(UTC)))["USA"]
 
-    assert any(a["kind"] == "tariff" and "15.0 → 10.0" in a["text"] for a in usa["alerts"])
-
-
-def test_unknown_country_cannot_be_watched(store):
-    with pytest.raises(KeyError):
-        store.watch("XXX")
+    assert any(a["kind"] == "tariff" and "15.0 → 10.0" in a["text"] for a in usa)
