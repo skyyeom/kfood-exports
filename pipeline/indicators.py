@@ -50,6 +50,46 @@ def covered_until(rows: pd.DataFrame, share: float = 0.9) -> int | None:
     return int(per_year[per_year >= share * rows.iso3.nunique()].index.max())
 
 
+def with_provisional_year(trade: pd.DataFrame, through: str | None = None) -> tuple[pd.DataFrame, dict | None]:
+    """Add the latest 12 months of 관세청 Korean exports as a provisional annual year.
+
+    Annual (Comtrade) data ends at year Y; 관세청 monthly data runs months beyond it. When 12 months ending after Y
+    exist, their sums by destination and HS4 are added as year Y+1 (source "kcs_ttm"), so Korean export momentum
+    uses the freshest data while pillars without newer data keep their latest year. `through` (YYYYMM) ends the
+    window at an earlier month, for month-on-month comparison. 관세청 and Comtrade agree exactly on annual totals.
+    """
+    annual_kr = trade[
+        (trade.freq == "A") & (trade.flow == "X") & (trade.reporter_iso3 == "KOR") & (trade.source != "kcs_ttm")
+    ]
+    monthly = trade[(trade.source == "kcs_monthly") & (trade.flow == "X") & (trade.freq == "M")]
+    if annual_kr.empty or monthly.empty:
+        return trade, None
+    last_annual = int(annual_kr.period.astype(int).max())
+    months = sorted(p for p in monthly.period.unique() if through is None or p <= through)
+    if not months or int(months[-1][:4]) <= last_annual:
+        return trade, None
+    window = months[-12:]
+    if (
+        len(window) < 12
+        or int(window[-1][:4]) * 12 + int(window[-1][4:]) - (int(window[0][:4]) * 12 + int(window[0][4:])) != 11
+    ):
+        return trade, None  # 12 consecutive months are needed
+    ttm = (
+        monthly[monthly.period.isin(window)]
+        .assign(hs=lambda d: d.hs.str[:4])
+        .groupby(["partner_iso3", "hs"], as_index=False)[["value_usd", "net_kg"]]
+        .sum()
+    )
+    year = last_annual + 1
+    rows = ttm.assign(source="kcs_ttm", reporter_iso3="KOR", flow="X", freq="A", period=str(year), imputed=False)
+    meta = {
+        "year": year,
+        "through": f"{window[-1][:4]}-{window[-1][4:]}",
+        "window": f"{window[0][:4]}-{window[0][4:]} to {window[-1][:4]}-{window[-1][4:]}",
+    }
+    return pd.concat([trade, rows[trade.columns.intersection(rows.columns)]], ignore_index=True), meta
+
+
 class InsufficientData(Exception):
     """Not enough data yet to score (e.g. trade loaded but no Korea-reported exports)."""
 

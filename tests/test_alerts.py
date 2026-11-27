@@ -32,7 +32,7 @@ def store():
             "imputed": False,
         }
         for iso, v in (("PHL", 1.0e6), ("USA", 1.0e7))
-        for i, p in enumerate(months())
+        for i, p in enumerate(months(start=(2024, 1)))  # inside the annual data: no provisional year
     ]
     run_sources([StaticSource("kcs_monthly", "trade_flows", flows)], s, http=None)
     return s

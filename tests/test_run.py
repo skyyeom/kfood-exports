@@ -396,3 +396,47 @@ def test_reranking_also_stores_score_history_and_forecast(store):
     assert {r["year"] for r in trend["forecast"]} == {2026, 2027, 2028}
     assert trend["holdout"]["actual_top3"] == ["USA", "CHN", "PHL"]
     assert next(r for r in trend["history"] if r["iso3"] == "USA")["name"] == "United States"
+
+
+def months_between(start, end):
+    y, m, out = int(start[:4]), int(start[4:]), []
+    while f"{y}{m:02d}" <= end:
+        out.append(f"{y}{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def test_monthly_korean_exports_make_a_provisional_ranking_and_a_month_on_month_comparison(store):
+    trade, indicators = load_tables()
+    monthly = [
+        {
+            "source": "kcs_monthly",
+            "reporter_iso3": "KOR",
+            "partner_iso3": iso,
+            "flow": "X",
+            "hs": "190590",
+            "freq": "M",
+            "period": p,
+            "value_usd": v,
+            "net_kg": 1.0,
+            "imputed": False,
+        }
+        for iso, v in (("USA", 1.6e7), ("PHL", 3.0e6), ("WLD", 6.0e7))
+        for p in months_between("202501", "202610")
+    ]
+
+    run_sources(
+        [
+            StaticSource("comtrade", "trade_flows", trade),
+            StaticSource("wdi", "country_indicators", indicators),
+            StaticSource("kcs_monthly", "trade_flows", monthly),
+        ],
+        store,
+        http=None,
+    )
+
+    usa = next(r for r in store.latest_ranking() if r["iso3"] == "USA")
+    change = store.latest_ranking(variant="month_change")
+    assert usa["reasons"]["strengths"][1]["facts"][0]["period"] == "2026"  # Korean exports: provisional 2026
+    assert change["latest"]["through"] == "2026-10" and change["previous"]["through"] == "2026-09"
+    assert set(change["ranks"]) == {"all", "1704", "1806", "1905", "2105"} and change["ranks"]["all"]["USA"] >= 1

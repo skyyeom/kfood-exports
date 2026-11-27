@@ -486,6 +486,7 @@ function renderControls(st) {
 }
 
 /* ---------- 1. the answer, 2. key figures ---------- */
+const monthName = ym => new Date(`${ym}-01T00:00:00`).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 const monthYear = () => new Date().toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 
 function renderAnswer(st) {
@@ -500,8 +501,11 @@ function renderAnswer(st) {
     (unsure.length ? `${unsure.join(" and ")} ${unsure.length > 1 ? "depend" : "depends"} on how you weigh growth against size; try the Priorities presets below.` : "All three hold up under most weightings.");
   const latestYear = Math.max(...(st.ranking.all || []).map(r => r.latest_year || 0)) || "—";
   const ex = st.kpis?.exports;
-  document.getElementById("answer-basis").textContent = `As of ${new Date(st.generated_at).toLocaleDateString("en-GB")}: annual trade data through ${latestYear}` +
-    `${ex ? `, monthly 관세청 exports through ${ym(ex.period)}` : ""}, and World Bank indicators. Updates automatically.`;
+  const pv = st.provisional;
+  document.getElementById("answer-basis").textContent = `As of ${new Date(st.generated_at).toLocaleDateString("en-GB")}: ` +
+    (pv ? `${pv.year} data is provisional: Korean exports for the 12 months ${pv.window} (관세청); partner imports and economic indicators use their latest published year. `
+        : `annual trade data through ${latestYear}${ex ? `, monthly 관세청 exports through ${ym(ex.period)}` : ""}, and World Bank indicators. `) +
+    "Updates automatically.";
 }
 
 function renderOvKpis(st) {
@@ -531,7 +535,9 @@ const changeChip = (st, r) => {
 function renderTop3(st) {
   document.getElementById("top3-month").textContent = monthYear();
   document.getElementById("top3-basis").textContent = isDefault(st)
-    ? (st.change_basis?.[category] === "since last week" ? "Rank change is since last week's ranking." : `Rank change compares the ranking on ${st.change_basis?.[category]} until a week-old ranking exists.`)
+    ? (st.change_basis?.[category] === "since last week" ? "Rank change is since last week's ranking."
+       : st.provisional ? `Rank change: ${st.change_basis?.[category]}, comparing the 12 months to ${monthName(st.provisional.through)} with the 12 months to the month before. It moves on when 관세청 publishes the next month (around the 15th).`
+       : `Rank change compares the ranking on ${st.change_basis?.[category]}.`)
     : "Re-ranked in your browser with the weights above; the reasons below explain each market under the default weights.";
   const top = currentRows(st).slice(0, 3);
   const el = document.getElementById("top3");

@@ -63,6 +63,12 @@ def next_run(source: str, now: datetime | None = None) -> str | None:
     return t.isoformat()
 
 
+def _month_label(month: dict) -> str:
+    """ "Sep → Oct 2026 data" from the two window end months."""
+    name = lambda ym: datetime.strptime(ym, "%Y-%m").strftime("%b")
+    return f"{name(month['previous']['through'])} → {name(month['latest']['through'])} {month['latest']['through'][:4]} data"
+
+
 def state(store: Store) -> dict:
     """Everything the preview page shows, as plain JSON."""
     runs = store.runs().sort_values("started_at", ascending=False)
@@ -88,16 +94,22 @@ def state(store: Store) -> dict:
         mine = events[events.run_id == run["run_id"]]
         run["events"] = _records(mine[["step", "status", "ts", "message", "metrics"]])
     categories = ("all", "1704", "1806", "1905", "2105")
-    latest = store.latest_rankings([(c, v) for c in categories for v in ("corrected", "trend")])
+    latest = store.latest_rankings(
+        [(c, v) for c in categories for v in ("corrected", "trend")] + [("all", "month_change")]
+    )
+    month = latest.get(("all", "month_change"))
     week_ago = (datetime.now(UTC) - timedelta(days=7)).isoformat(timespec="milliseconds")
     before = store.latest_rankings([(c, "corrected") for c in categories], before=week_ago)
     ranking, change_basis = {}, {}
     for c in categories:
-        # rank change since last week; until a week-old ranking exists, since last year's annual ranking
+        # rank change: month on month when monthly data allows (e.g. Sep → Oct), else since last week,
+        # else between the last two years of annual data
         was = {r["iso3"]: r["rank"] for r in before.get((c, "corrected")) or []}
         change_basis[c] = "since last week"
         trend = latest.get((c, "trend"))
-        if not was and trend and trend.get("history"):
+        if month and month["ranks"].get(c):
+            was, change_basis[c] = month["ranks"][c], _month_label(month)
+        elif not was and trend and trend.get("history"):
             prior = max(r["year"] for r in trend["history"]) - 1
             was = {r["iso3"]: r["rank"] for r in trend["history"] if r["year"] == prior}
             change_basis[c] = f"{prior} → {prior + 1} data"  # today's ranking is built on the latest year's data
@@ -128,6 +140,7 @@ def state(store: Store) -> dict:
         "revisions": _records(store.recent_revisions(25)),
         "ranking": ranking,
         "change_basis": change_basis,
+        "provisional": month["latest"] if month else None,
         "trend": {c: latest.get((c, "trend")) for c in categories if latest.get((c, "trend"))},
         "presets": PRESETS,
         "next_steps": steps,

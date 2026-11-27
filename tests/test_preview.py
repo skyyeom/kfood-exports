@@ -414,3 +414,27 @@ def test_without_a_week_old_ranking_changes_fall_back_to_last_years_rank():
 
 def test_with_a_week_old_ranking_changes_are_since_last_week(last_week):
     assert last_week["change_basis"]["all"] == "since last week"
+
+
+def test_month_on_month_comparison_is_preferred_when_monthly_data_allows():
+    store = seeded_store()
+    current = store.latest_ranking()
+    ranks = {c: {r["iso3"]: r["rank"] for r in current} for c in ("all", "1704", "1806", "1905", "2105")}
+    ranks["all"]["PHL"] = 6
+    store.save_ranking(
+        "m",
+        "all",
+        "month_change",
+        "default",
+        {
+            "latest": {"year": 2026, "through": "2026-10", "window": "2025-11 to 2026-10"},
+            "previous": {"year": 2026, "through": "2026-09", "window": "2025-10 to 2026-09"},
+            "ranks": ranks,
+        },
+    )
+
+    st = state(store)
+
+    phl = next(r for r in st["ranking"]["all"] if r["iso3"] == "PHL")
+    assert st["change_basis"]["all"] == "Sep → Oct 2026 data" and phl["rank_change"] == 3
+    assert st["provisional"]["through"] == "2026-10"
