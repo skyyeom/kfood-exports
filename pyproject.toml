@@ -25,7 +25,7 @@ dev = ["pytest>=8", "ruff>=0.5"]
 packages = ["pipeline", "pipeline.sources"]
 
 [tool.setuptools.package-data]
-pipeline = ["tariff_overrides.yaml", "preview.html"]
+pipeline = ["tariff_overrides.yaml", "preview.html", "login.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

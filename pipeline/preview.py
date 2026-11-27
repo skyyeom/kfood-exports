@@ -8,6 +8,7 @@ the feed live. Reads DATABASE_URL (default sqlite:///data/local.db).
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import sys
@@ -19,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pandas as pd
 
+from pipeline.auth import LoginThrottle, Sessions, verify_password
 from pipeline.config import CANDIDATES, FTA_WITH_KOREA, HS
 from pipeline.db import Store
 from pipeline.http import Http
@@ -30,6 +32,8 @@ from pipeline.run import run_sources
 from pipeline.sources import SOURCES
 
 PAGE = Path(__file__).with_name("preview.html")
+LOGIN_PAGE = Path(__file__).with_name("login.html")
+COOKIE = "wellgtm_session"
 
 # Mirrors the cron lines in .github/workflows/ingest-*.yml (UTC): (weekday or None, day of month or None, hour)
 SCHEDULES = {
@@ -172,6 +176,88 @@ class _Handler(BaseHTTPRequestHandler):
     store: Store
     running: set[str]
     lock = threading.Lock()
+    username: str
+    password_hash: str
+    sessions: Sessions
+    throttle: LoginThrottle
+
+    # ---- sign-in gate: only /login is public; every other page and API call needs a session ----
+    def _token(self) -> str | None:
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == COOKIE:
+                return value
+        return None
+
+    def _user(self) -> str | None:
+        return self.sessions.user(self._token())
+
+    def _refuse(self, path: str) -> None:
+        if path.startswith("/api/"):
+            return self._send(401, b'{"error": "not signed in"}')
+        self.send_response(303)
+        self.send_header("Location", "/login")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def _read_body(self) -> dict:
+        raw = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
+        if "json" in (self.headers.get("Content-Type") or ""):
+            try:
+                return json.loads(raw or "{}")
+            except json.JSONDecodeError:
+                return {}
+        return {k: v[0] for k, v in parse_qs(raw).items()}
+
+    def _login(self) -> None:
+        address = self.client_address[0]
+        if self.throttle.locked(address):
+            return self._send(429, b'{"error": "Too many failed attempts. Wait a minute and try again."}')
+        body = self._read_body()
+        user, password = str(body.get("username", "")), str(body.get("password", ""))
+        name_ok = hmac.compare_digest(user.encode(), self.username.encode())
+        if not (verify_password(password, self.password_hash) and name_ok):
+            self.throttle.failed(address)
+            return self._send(401, b'{"error": "Wrong username or password."}')
+        self.throttle.succeeded(address)
+        token = self.sessions.create(user)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header(
+            "Set-Cookie", f"{COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={self.sessions.ttl}"
+        )
+        self.end_headers()
+        self.wfile.write(json.dumps({"user": user}).encode())
+
+    def _logout(self) -> None:
+        self.sessions.end(self._token())
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Set-Cookie", f"{COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+        self.end_headers()
+        self.wfile.write(b'{"ok": true}')
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path == "/login":
+            return self._send(200, LOGIN_PAGE.read_bytes(), "text/html; charset=utf-8")
+        user = self._user()
+        if not user:
+            return self._refuse(path)
+        if path == "/api/me":
+            return self._send(200, json.dumps({"user": user}).encode())
+        self._get(path)
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if path == "/login":
+            return self._login()
+        if not self._user():
+            return self._refuse(path)
+        if path == "/logout":
+            return self._logout()
+        self._post()
 
     def _send(self, code: int, body: bytes, kind: str = "application/json") -> None:
         self.send_response(code)
@@ -180,8 +266,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self):
-        path = urlparse(self.path).path
+    def _get(self, path: str) -> None:
         if path == "/":
             self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
         elif path.startswith("/api/country/"):
@@ -200,8 +285,8 @@ class _Handler(BaseHTTPRequestHandler):
             with tempfile.TemporaryDirectory() as tmp:
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-                    for path in export_csv(self.store, tmp):
-                        z.write(path, path.name)
+                    for csv_path in export_csv(self.store, tmp):
+                        z.write(csv_path, csv_path.name)
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
             self.send_header("Content-Disposition", 'attachment; filename="wellgtm-bi-data.zip"')
@@ -229,7 +314,7 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, b'{"error": "not found"}')
 
-    def do_POST(self):
+    def _post(self) -> None:
         url = urlparse(self.path)
         if url.path == "/api/report":
             return self._send(201, json.dumps(self._report(), default=str).encode())
@@ -261,17 +346,45 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
-def main(port: int = 8765) -> None:
-    url = os.environ.get("DATABASE_URL", "sqlite:///data/local.db")
+def make_server(store: Store, port: int, username: str, password_hash: str) -> ThreadingHTTPServer:
+    handler = type(
+        "Handler",
+        (_Handler,),
+        {
+            "store": store,
+            "running": set(),
+            "username": username,
+            "password_hash": password_hash,
+            "sessions": Sessions(),
+            "throttle": LoginThrottle(),
+        },
+    )
+    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+
+
+def main(port: int = 8765, env=None) -> int:
+    env = os.environ if env is None else env
+    username, password_hash = env.get("DASHBOARD_USERNAME"), env.get("DASHBOARD_PASSWORD_HASH")
+    if not (username and password_hash):
+        print(
+            "No dashboard login is set. Create one with:\n\n    .venv/bin/python -m pipeline.auth set\n\n"
+            "then load .env (set -a; . ./.env; set +a) and start the dashboard again."
+        )
+        return 2
+    url = env.get("DATABASE_URL", "sqlite:///data/local.db")
     if url.startswith("sqlite:///"):
         Path(url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
     store = Store(url)
     if url.startswith("sqlite"):
         store.create_all()
-    handler = type("Handler", (_Handler,), {"store": store, "running": set()})
-    print(f"WellGTM preview on http://localhost:{port}  (database: {url.split('@')[-1]})")
-    ThreadingHTTPServer(("127.0.0.1", port), handler).serve_forever()
+    server = make_server(store, port, username, password_hash)
+    print(
+        f"WellGTM dashboard on http://localhost:{server.server_address[1]}  (database: {url.split('@')[-1]}; "
+        f"sign in as {username})"
+    )
+    server.serve_forever()
+    return 0
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else 8765)
+    sys.exit(main(int(sys.argv[1]) if len(sys.argv) > 1 else 8765))

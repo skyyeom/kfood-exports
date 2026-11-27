@@ -9,8 +9,8 @@ from pipeline.preview import country_state, next_run, state, trends_state
 from pipeline.run import run_sources
 
 
-def seeded_store():
-    s = Store("sqlite://")
+def seeded_store(url="sqlite://"):
+    s = Store(url)
     s.create_all()
     trade, indicators = load_tables()
     run_sources(

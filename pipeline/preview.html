@@ -147,6 +147,8 @@
   #tip dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 6px 0 0; }
   #tip dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   [hidden] { display: none !important; }
+  .account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ring); }
+  .account #whoami { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
   .more { font-weight: 600; font-size: 14px; text-decoration: none; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--grid); }
   .more:hover { text-decoration: underline; }
   tbody tr.link { cursor: pointer; }
@@ -215,7 +217,10 @@
           Management</a></li>
       </ul>
     </nav>
-    <div class="side-foot" id="side-foot" aria-live="polite"></div>
+    <div class="side-foot">
+      <div id="side-foot" aria-live="polite"></div>
+      <div class="account"><span id="whoami"></span><button class="linkbtn" id="signout">Sign out</button></div>
+    </div>
   </aside>
 
   <main id="main" tabindex="-1">
@@ -341,6 +346,14 @@
 <div id="tip" role="tooltip" hidden></div>
 
 <script>
+/* A signed-out or expired session sends every page back to the login screen. */
+const rawFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await rawFetch(...args);
+  if (res.status === 401) location.replace("/login");
+  return res;
+};
+
 const CATEGORIES = { all: "All products", "1704": "Sugar confectionery", "1806": "Chocolate", "1905": "Bakery & biscuits", "2105": "Ice cream" };
 const PILLARS = { "Market growth": "Market growth", "Market size": "Market size", "K-momentum (trade)": "Korean export momentum", "Entry ease": "Ease of entry" };
 const SOURCE_INFO = {
@@ -842,6 +855,13 @@ document.addEventListener("click", async e => {
   if (cat) { category = cat.dataset.cat; renderTabs(); if (last) { renderTop3(last); renderRanking(last); } }
 });
 addEventListener("hashchange", () => { route(); document.getElementById("main").focus(); });
+fetch("/api/me").then(r => r.ok ? r.json() : null).then(me => {
+  if (me) document.getElementById("whoami").textContent = `Signed in as ${me.user}`;
+});
+document.getElementById("signout").addEventListener("click", async () => {
+  await rawFetch("/logout", { method: "POST" });
+  location.replace("/login");
+});
 renderTabs(); route(); refresh();
 setInterval(refresh, 3000);
 </script>
