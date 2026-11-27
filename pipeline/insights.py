@@ -19,8 +19,7 @@ _records = records
 
 def trends_state(store: Store) -> dict:
     """Current trends: Korea's monthly K-food exports, fastest-growing destinations, commodity prices, score trend."""
-    trade = store.read("trade_flows")
-    kcs = trade[(trade.source == "kcs_monthly") & (trade.flow == "X")]
+    kcs = store.read("trade_flows", source="kcs_monthly", flow="X")
     world = kcs[kcs.partner_iso3 == "WLD"].assign(category=lambda d: d.hs.str[:4])
     monthly = world.groupby(["category", "period"], as_index=False).value_usd.sum().sort_values("period")
     periods = sorted(monthly.period.unique())

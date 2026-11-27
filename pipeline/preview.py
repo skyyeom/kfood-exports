@@ -76,28 +76,23 @@ def state(store: Store) -> dict:
                 "next_run": next_run(name),
             }
         )
-    recent = runs.head(15)
-    feed = []
-    for run in _records(recent):
-        run["events"] = _records(store.events(run["run_id"])[["step", "status", "ts", "message", "metrics"]])
-        feed.append(run)
-    revisions = (
-        pd.concat([store.revisions(r) for r in runs.run_id.head(30)], ignore_index=True)
-        if len(runs)
-        else pd.DataFrame()
-    )
-    revisions = revisions.sort_values("id", ascending=False).head(25) if len(revisions) else revisions
+    # One query each for the feed's events, the recent revisions, the rankings and the row counts:
+    # against Supabase every query is a network round trip (see test_a_dashboard_refresh_makes_...).
+    recent = _records(runs.head(15))
+    events = store.events_for([r["run_id"] for r in recent])
+    for run in recent:
+        mine = events[events.run_id == run["run_id"]]
+        run["events"] = _records(mine[["step", "status", "ts", "message", "metrics"]])
+    categories = ("all", "1704", "1806", "1905", "2105")
+    latest = store.latest_rankings([(c, "corrected") for c in categories] + [("all", "trend")])
     return {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "sources": sources,
-        "runs": feed,
-        "revisions": _records(revisions),
-        "ranking": {c: store.latest_ranking(category=c) for c in ("all", "1704", "1806", "1905", "2105")},
-        "trend": store.latest_ranking(variant="trend") or None,
-        "rows": {
-            t: len(store.read(t))
-            for t in ("trade_flows", "country_indicators", "tariffs", "fx_rates", "commodity_prices")
-        },
+        "runs": recent,
+        "revisions": _records(store.recent_revisions(25)),
+        "ranking": {c: latest.get((c, "corrected")) or [] for c in categories},
+        "trend": latest.get(("all", "trend")) or None,
+        "rows": store.row_counts(("trade_flows", "country_indicators", "tariffs", "fx_rates", "commodity_prices")),
     }
 
 
@@ -136,14 +131,14 @@ def country_state(store: Store, iso: str) -> dict:
     """Everything the country page shows for one candidate market."""
     if iso not in CANDIDATES:
         raise KeyError(iso)
+    latest = store.latest_rankings([(c, "corrected") for c in CATEGORIES])
     ranking = {}
     for category in CATEGORIES:
-        rows = store.latest_ranking(category=category)
+        rows = latest.get((category, "corrected")) or []
         row = next((r for r in rows if r["iso3"] == iso), None)
         ranking[category] = row | {"of": len(rows)} if row else None
 
-    trade = store.read("trade_flows")
-    mine = trade[(trade.partner_iso3 == iso) & (trade.flow == "X") & (trade.freq == "M")]
+    mine = store.read("trade_flows", partner_iso3=iso, flow="X", freq="M")
     food = mine[mine.source == "kcs_monthly"].assign(category=lambda d: d.hs.str[:4])
     monthly = food.groupby(["category", "period"], as_index=False).value_usd.sum().sort_values("period")
     recent = sorted(monthly.period.unique())[-36:]
@@ -168,7 +163,9 @@ def country_state(store: Store, iso: str) -> dict:
         "ranking": ranking,
         "monthly": _records(monthly),
         "food_share": share,
-        "tariffs": _applied_tariffs(store.read("tariffs"), iso, datetime.now(UTC).date().isoformat()),
+        "tariffs": _applied_tariffs(
+            store.read("tariffs", importer_iso3=iso), iso, datetime.now(UTC).date().isoformat()
+        ),
     }
 
 

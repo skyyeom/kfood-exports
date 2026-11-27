@@ -447,6 +447,41 @@ class Store:
             ranked = c.execute(sa.select(sa.func.max(ranking_snapshots.c.computed_at))).scalar() or ""
         return bool(changed) and changed > ranked
 
+    def row_counts(self, tables: tuple[str, ...]) -> dict[str, int]:
+        """Row counts for several tables in one round trip (never reads the rows)."""
+        q = " union all ".join(
+            f"select '{t}' as table_name, count(*) as row_count from {t}" for t in tables if t in metadata.tables
+        )
+        with self.engine.connect() as c:
+            return {r.table_name: int(r.row_count) for r in c.execute(sa.text(q))}
+
+    def events_for(self, run_ids: list[str]) -> pd.DataFrame:
+        """Events of several runs in one query."""
+        q = ingest_events.select().where(ingest_events.c.run_id.in_(run_ids or [""])).order_by(ingest_events.c.id)
+        with self.engine.connect() as c:
+            return pd.read_sql(q, c)
+
+    def recent_revisions(self, limit: int = 25) -> pd.DataFrame:
+        q = data_revisions.select().order_by(data_revisions.c.id.desc()).limit(limit)
+        with self.engine.connect() as c:
+            return pd.read_sql(q, c)
+
+    def latest_rankings(self, keys: list[tuple[str, str]], preset: str = "default") -> dict[tuple[str, str], object]:
+        """Latest snapshot payload for each (category, variant), in two queries instead of one per key."""
+        r = ranking_snapshots.c
+        heads = sa.select(r.id, r.category, r.variant, r.computed_at).where(r.preset == preset)
+        latest: dict[tuple[str, str], tuple[str, int]] = {}
+        with self.engine.connect() as c:
+            for row in c.execute(heads):
+                key, rank = (row.category, row.variant), (row.computed_at, row.id)
+                if key in keys and (key not in latest or rank > latest[key]):
+                    latest[key] = rank
+            ids = {i: key for key, (_, i) in latest.items()}
+            payloads = {
+                row.id: row.payload for row in c.execute(sa.select(r.id, r.payload).where(r.id.in_(ids or [-1])))
+            }
+        return {key: payloads.get(i) for i, key in ids.items()}
+
     def runs(self) -> pd.DataFrame:
         with self.engine.connect() as c:
             return pd.read_sql(ingest_runs.select().order_by(ingest_runs.c.started_at), c)
@@ -463,9 +498,12 @@ class Store:
                 data_revisions.select().where(data_revisions.c.run_id == run_id).order_by(data_revisions.c.id), c
             )
 
-    def read(self, table: str) -> pd.DataFrame:
+    def read(self, table: str, **equals) -> pd.DataFrame:
+        """Rows of a table, optionally only those whose columns equal the given values (filtered in the database)."""
+        t = metadata.tables[table]
+        q = t.select().where(*[t.c[k] == v for k, v in equals.items()]) if equals else t.select()
         with self.engine.connect() as c:
-            return pd.read_sql(metadata.tables[table].select(), c)
+            return pd.read_sql(q, c)
 
 
 def migration_sql() -> str:

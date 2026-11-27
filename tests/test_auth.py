@@ -78,8 +78,12 @@ def test_hash_survives_being_loaded_from_env_by_a_shell(tmp_path):
     env = tmp_path / ".env"
     env.write_text(f"DASHBOARD_PASSWORD_HASH={stored}\n")
 
-    loaded = subprocess.run(["bash", "-c", f'set -a; . "{env}"; printf %s "$DASHBOARD_PASSWORD_HASH"'],
-                            capture_output=True, text=True, check=True).stdout
+    loaded = subprocess.run(
+        ["bash", "-c", f'set -a; . "{env}"; printf %s "$DASHBOARD_PASSWORD_HASH"'],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
 
     assert loaded == stored and verify_password("correct horse battery", loaded)
 

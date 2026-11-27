@@ -270,3 +270,48 @@ def test_trends_include_commodity_prices_with_change_over_a_year():
     assert (cocoa["commodity"], cocoa["unit"], cocoa["latest_month"]) == ("cocoa", "USD/kg", "2026-10")
     assert cocoa["yoy"] == pytest.approx((5.0 + 2.3) / (5.0 + 1.1) - 1)
     assert len(cocoa["series"]) == 24
+
+
+def count_queries(store, fn):
+    import sqlalchemy as sa
+
+    seen = []
+    listener = lambda *a, **k: seen.append(1)
+    sa.event.listen(store.engine, "before_cursor_execute", listener)
+    try:
+        fn()
+    finally:
+        sa.event.remove(store.engine, "before_cursor_execute", listener)
+    return len(seen)
+
+
+def test_a_dashboard_refresh_makes_a_small_fixed_number_of_queries():
+    # Regression: one refresh made ~55 round trips (a query per run for events and for revisions) and read whole
+    # tables to count rows; against Supabase that took 10.5 s and the browser abandoned the requests
+    store = seeded_store()
+    for _ in range(20):
+        run_sources([StaticSource("fx", "fx_rates", fx_rows())], store, http=None)
+
+    assert count_queries(store, lambda: state(store)) <= 15
+
+
+def test_state_counts_rows_without_reading_whole_tables():
+    store = seeded_store()
+
+    assert state(store)["rows"]["trade_flows"] == len(store.read("trade_flows"))
+
+
+def test_a_country_page_fetches_only_that_countrys_rows():
+    store = country_store()
+    import sqlalchemy as sa
+
+    statements = []
+    listener = lambda conn, cur, stmt, *a: statements.append(stmt)
+    sa.event.listen(store.engine, "before_cursor_execute", listener)
+    try:
+        country_state(store, "USA")
+    finally:
+        sa.event.remove(store.engine, "before_cursor_execute", listener)
+
+    trade_reads = [s for s in statements if "FROM trade_flows" in s]
+    assert len(statements) <= 6 and trade_reads and all("WHERE" in s for s in trade_reads)

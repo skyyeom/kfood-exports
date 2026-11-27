@@ -239,7 +239,7 @@
       <section aria-labelledby="top3-h">
         <h2 id="top3-h">TOP3 for <span id="top3-month"></span></h2>
         <p class="fact" id="top3-basis" style="margin:-6px 0 12px"></p>
-        <div class="top3" id="top3"></div>
+        <div class="top3" id="top3"><div class="card empty" role="status">Loading the latest data…</div></div>
       </section>
 
       <section aria-labelledby="pred-h">
@@ -816,14 +816,22 @@ function renderFreshness(st) {
   document.getElementById("side-foot").textContent = text;
 }
 
+let refreshing = false;
 async function refresh() {
+  if (refreshing) return;  // never stack requests: a slow database must not pile them up
+  refreshing = true;
   try {
-    const st = await (await fetch("/api/state")).json();
+    const res = await fetch("/api/state");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const st = await res.json();
     last = st;
     renderFreshness(st); renderTop3(st); renderTrend(st); renderPredicted(st); renderRanking(st);
     renderKpis(st); renderSources(st); renderFeed(st); renderRevisions(st);
   } catch (e) {
-    document.getElementById("side-foot").textContent = "Server not reachable";
+    document.getElementById("side-foot").textContent = "Can't reach the dashboard server; retrying…";
+    if (!last) document.getElementById("top3").innerHTML = `<div class="card empty" role="status">Can't load the data yet. Check that the dashboard server is running; this page retries automatically.</div>`;
+  } finally {
+    refreshing = false;
   }
 }
 
