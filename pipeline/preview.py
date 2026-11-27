@@ -368,6 +368,19 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(buf.getvalue())
         elif path == "/api/reports":
             self._send(200, json.dumps(self.store.list_reports()).encode())
+        elif path.startswith("/api/reports/") and path.endswith(".pdf"):
+            week = path.rsplit("/", 1)[-1].removesuffix(".pdf")
+            report = self.store.get_report(week)
+            if report is None:
+                return self._send(404, b'{"error": "no such report"}')
+            from pipeline.report_pdf import to_pdf
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Disposition", f'attachment; filename="wellgtm-report-{week}.pdf"')
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(to_pdf(report))
         elif path.startswith("/api/reports/"):
             week = path.rsplit("/", 1)[-1]
             as_md = week.endswith(".md")

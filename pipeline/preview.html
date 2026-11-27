@@ -726,7 +726,7 @@ async function loadReports(week) {
   const r = await (await fetch(`/api/reports/${encodeURIComponent(pick)}`)).json();
   const usd = v => money(v);
   view.innerHTML = `<div class="page-head" style="margin:0 0 8px"><h2 style="margin:0">${esc(r.title)}</h2>
-      <a class="linkbtn" href="/api/reports/${esc(r.week)}.md" download>Download Markdown</a></div>
+      <a class="linkbtn" href="/api/reports/${esc(r.week)}.pdf" download>Download PDF</a></div>
     <p style="margin:0 0 4px"><b>${esc(r.headline)}</b></p>
     <p class="fact" style="margin:0">Generated ${esc(new Date(r.generated_at).toLocaleString())}</p>
     <h3>TOP3</h3><ol style="margin:0;padding-left:20px">${r.top3.map(c => `<li><a class="row-link" href="#/country/${esc(c.iso3)}/all">${esc(c.name)}</a> · score ${c.score.toFixed(1)} · ${badge(CONF[c.confidence])}<div class="fact">${esc(c.headline)}</div></li>`).join("")}</ol>
@@ -736,7 +736,7 @@ async function loadReports(week) {
     <h3>Exports (관세청)</h3>${r.exports ? `<p class="fact" style="margin:0 0 6px">Korea's K-food exports in ${ym(r.exports.period)}: <b>${usd(r.exports.value_usd)}</b> (${pct(r.exports.yoy)} on a year earlier).</p>
       <table><thead><tr><th scope="col">Category</th><th class="num" scope="col">${ym(r.exports.period)}</th><th class="num" scope="col">vs a year earlier</th></tr></thead><tbody>${
       Object.values(r.exports.by_category).map(c => `<tr><td>${esc(c.name)}</td><td class="num">${usd(c.value_usd)}</td><td class="num ${dir(c.yoy)}">${pct(c.yoy)}</td></tr>`).join("")}</tbody></table>
-      ${r.exports.fastest_destinations.length ? `<p class="fact">Fastest-growing destinations (12 months, ≥ US$5M): ${r.exports.fastest_destinations.map(d => `${esc(d.name)} ${pct(d.growth)}`).join(", ")}</p>` : ""}` : `<p class="empty">No 관세청 data.</p>`}
+      ${r.exports.fastest_destinations.length ? `<p class="fact">Fastest-growing destinations (12 months, ≥ US$5M): ${r.exports.fastest_destinations.map(d => `${esc(d.name)}${d.hub ? " (re-export hub)" : ""} ${pct(d.growth)}`).join(", ")}</p>` : ""}` : `<p class="empty">No 관세청 data.</p>`}
     <h3>Forecast</h3>${r.forecast ? `<p class="fact" style="margin:0">Most likely TOP3 in ${r.forecast.year}: ${r.forecast.top3.map(c => `${esc(c.name)} (${Math.round(c.p_top3 * 100)}%)`).join(", ")}.</p>` : `<p class="empty">No forecast yet.</p>`}
     <h3>Alerts (top 10 markets)</h3>${(r.alerts || []).length ? `<ul class="alerts">${r.alerts.map(a => `<li>${badge(["warning", "!", ""])}<span><a class="row-link" href="#/country/${esc(a.iso3)}/all">${esc(a.name)}</a>: ${esc(a.text)}</span></li>`).join("")}</ul>` : `<p class="fact" style="margin:0">No alerts this week.</p>`}
     <h3>Ingredient prices</h3><p class="fact" style="margin:0">${r.prices.map(p => `${esc(COMMODITY[p.commodity] || p.commodity)} ${p.latest.toFixed(2)} ${esc(p.unit)} (${pct(p.yoy)})`).join(" · ") || "No data."}</p>
@@ -773,7 +773,7 @@ function renderTrendsPage() {
   const maxDest = Math.max(...t.destinations.map(d => d.last12_usd), 1);
   document.getElementById("tr-dest").innerHTML = t.destinations.length ? `<table><caption>Candidate markets ranked by Korean K-food exports over the last 12 months (관세청).</caption>
     <thead><tr><th scope="col">Country</th><th class="bar-cell" scope="col">Last 12 months</th><th class="num" scope="col">12 months before</th><th class="num" scope="col">Change</th></tr></thead><tbody>${
-    t.destinations.map(d => `<tr class="link" data-href="#/country/${esc(d.iso3)}/all"><td><a class="row-link" href="#/country/${esc(d.iso3)}/all">${esc(d.name)}</a></td>
+    t.destinations.map(d => `<tr class="link" data-href="#/country/${esc(d.iso3)}/all"><td><a class="row-link" href="#/country/${esc(d.iso3)}/all">${esc(d.name)}</a>${d.hub ? ' <span class="pill">re-export hub</span>' : ""}</td>
       <td><div class="bar-wrap"><div class="bar" aria-hidden="true"><span style="width:${(d.last12_usd / maxDest * 100).toFixed(1)}%"></span></div><b>${money(d.last12_usd)}</b></div></td>
       <td class="num">${money(d.prev12_usd)}</td><td class="num ${dir(d.growth)}">${pct(d.growth)}</td></tr>`).join("")}</tbody></table>`
     : `<p class="empty">Needs 24 months of 관세청 data.</p>`;

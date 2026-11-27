@@ -437,3 +437,9 @@ def test_without_monthly_data_there_is_no_monthly_change():
 def test_monthly_change_compares_the_two_latest_12_month_windows(last_week):
     assert last_week["change_basis"]["all"]["month"] == "Sep → Oct 2026 data"
     assert last_week["provisional"]["through"] == "2026-10"
+
+
+def test_destinations_say_which_are_re_export_hubs():
+    t = trends_state(trends_store())
+
+    assert all("hub" in d for d in t["destinations"])

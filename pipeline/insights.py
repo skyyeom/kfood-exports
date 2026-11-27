@@ -6,7 +6,7 @@ import json
 
 import pandas as pd
 
-from pipeline.config import CANDIDATES
+from pipeline.config import CANDIDATES, HUBS
 from pipeline.db import Store
 
 
@@ -48,6 +48,7 @@ def trends_state(store: Store) -> dict:
                     {
                         "iso3": iso,
                         "name": CANDIDATES[iso][1],
+                        "hub": iso in HUBS,
                         "last12_usd": float(a[iso]),
                         "prev12_usd": float(b.get(iso, 0.0)),
                         "growth": float(a[iso] / b[iso] - 1) if b.get(iso) else None,

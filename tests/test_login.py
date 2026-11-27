@@ -147,3 +147,18 @@ def test_dashboard_data_is_cached_between_refreshes(server):
         sa.event.remove(store_engine, "before_cursor_execute", listener)
 
     assert status == 200 and queries == []
+
+
+def test_a_weekly_report_downloads_as_a_pdf(server):
+    *_, cookie = sign_in(server)
+    status, _, body = request(server, "POST", "/api/report", cookie=cookie)
+    week = json.loads(body)["week"]
+
+    status, headers, pdf = request(server, "GET", f"/api/reports/{week}.pdf", cookie=cookie)
+
+    assert status == 200 and headers["Content-Type"] == "application/pdf" and pdf.startswith(b"%PDF")
+    assert f'filename="wellgtm-report-{week}.pdf"' in headers["Content-Disposition"]
+
+
+def test_report_pdfs_need_signing_in(server):
+    assert request(server, "GET", "/api/reports/2026-W48.pdf")[0] == 401

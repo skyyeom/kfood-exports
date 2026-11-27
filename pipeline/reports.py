@@ -210,7 +210,10 @@ def to_markdown(r: dict) -> str:
         if e["fastest_destinations"]:
             lines.append(
                 "- Fastest-growing destinations (12 months, ≥ US$5M): "
-                + ", ".join(f"{d['name']} {_pct(d['growth'])}" for d in e["fastest_destinations"])
+                + ", ".join(
+                    f"{d['name']}{' (re-export hub)' if d.get('hub') else ''} {_pct(d['growth'])}"
+                    for d in e["fastest_destinations"]
+                )
             )
     else:
         lines.append("No 관세청 monthly data loaded.")
