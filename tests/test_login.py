@@ -37,9 +37,9 @@ def server(db_url):
     srv.shutdown()
 
 
-def request(port, method, path, body=None, cookie=None, form=False):
+def request(port, method, path, body=None, cookie=None, form=False, headers=None):
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-    headers = {"Cookie": cookie} if cookie else {}
+    headers = dict(headers or {}) | ({"Cookie": cookie} if cookie else {})
     data = None
     if body is not None:
         data = urllib.parse.urlencode(body) if form else json.dumps(body)
@@ -162,3 +162,65 @@ def test_a_weekly_report_downloads_as_a_pdf(server):
 
 def test_report_pdfs_need_signing_in(server):
     assert request(server, "GET", "/api/reports/2026-W48.pdf")[0] == 401
+
+
+# ---- deployment behind a proxy (Render) ----
+
+
+@pytest.fixture(scope="module")
+def proxied(db_url):
+    srv = make_server(Store(db_url), port=0, username=USER, password_hash=hash_password(PASSWORD), trust_proxy=True)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield srv.server_address[1]
+    srv.shutdown()
+
+
+def proxied_sign_in(port, ip, password=PASSWORD, proto="https"):
+    return request(
+        port,
+        "POST",
+        "/login",
+        {"username": USER, "password": password},
+        headers={"X-Forwarded-For": f"{ip}, 10.0.0.1", "X-Forwarded-Proto": proto},
+    )
+
+
+def test_health_check_is_public_and_reveals_no_data(server):
+    status, _, body = request(server, "GET", "/healthz")
+
+    assert status == 200 and json.loads(body) == {"ok": True}
+
+
+def test_cookie_is_secure_when_served_over_https(proxied):
+    _, headers, _ = proxied_sign_in(proxied, "1.1.1.1")
+
+    assert "secure" in headers["Set-Cookie"].lower()
+
+
+def test_cookie_is_not_marked_secure_on_plain_local_http(server):
+    _, headers, _, _ = sign_in(server)
+
+    assert "secure" not in headers["Set-Cookie"].lower()
+
+
+def test_behind_a_proxy_one_visitors_wrong_passwords_do_not_lock_out_others(proxied):
+    for _ in range(5):
+        proxied_sign_in(proxied, "9.9.9.9", password="wrong password!")
+
+    assert proxied_sign_in(proxied, "9.9.9.9")[0] == 429
+    assert proxied_sign_in(proxied, "8.8.8.8")[0] == 200
+
+
+def test_without_trusting_a_proxy_forwarded_addresses_are_ignored(server):
+    # a visitor could otherwise dodge the lockout by sending a made-up X-Forwarded-For
+    from pipeline.preview import client_address
+
+    assert client_address("127.0.0.1", {"X-Forwarded-For": "1.2.3.4"}, trust_proxy=False) == "127.0.0.1"
+    assert client_address("10.0.0.1", {"X-Forwarded-For": "1.2.3.4, 10.0.0.1"}, trust_proxy=True) == "1.2.3.4"
+
+
+def test_listen_address_comes_from_the_hosting_platform():
+    from pipeline.preview import listen_address
+
+    assert listen_address({}) == ("127.0.0.1", 8765)
+    assert listen_address({"PORT": "10000", "HOST": "0.0.0.0"}) == ("0.0.0.0", 10000)
